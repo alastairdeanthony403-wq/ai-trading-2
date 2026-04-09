@@ -1,5 +1,5 @@
 # ============================================================
-# AI Trading Web App (UI + Signals)
+# AI Trading Web App (UI + Signals + Telegram Alerts)
 # ============================================================
 
 from flask import Flask, render_template, request, jsonify
@@ -14,10 +14,26 @@ bot_config = {
     "risk_reward": 2
 }
 
+last_signal = None  # prevents spam alerts
+
+
+# ---------------- TELEGRAM ----------------
+def send_telegram(msg):
+    TOKEN = "YOUR_TOKEN" CHAT_ID = "8654099944:AAEuwAtfImHBnE3TlD3a3z_eWz-oBIQMLf8"
+
+    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+
+    requests.post(url, data={
+        "chat_id": CHAT_ID,
+        "text": msg
+    })
+
+
 # ---------------- DATA FETCH ----------------
 def fetch_ohlcv(symbol: str):
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range=1mo&interval=1h"
     headers = {"User-Agent": "Mozilla/5.0"}
+
     r = requests.get(url, headers=headers)
     data = r.json()["chart"]["result"][0]
 
@@ -35,12 +51,20 @@ def fetch_ohlcv(symbol: str):
 
     return df
 
+
 # ---------------- INDICATORS ----------------
 def add_indicators(df):
-    df["rsi"] = 50  # simplified placeholder
     df["sma20"] = df["close"].rolling(20).mean()
     df["sma50"] = df["close"].rolling(50).mean()
+
+    # RSI
+    delta = df["close"].diff()
+    gain = delta.clip(lower=0).rolling(14).mean()
+    loss = (-delta.clip(upper=0)).rolling(14).mean()
+    df["rsi"] = 100 - (100 / (1 + gain / loss))
+
     return df.dropna()
+
 
 # ---------------- SIGNAL ----------------
 def generate_signal(df):
@@ -49,13 +73,7 @@ def generate_signal(df):
     price = latest["close"]
     sma20 = latest["sma20"]
     sma50 = latest["sma50"]
-
-    # RSI calculation
-    delta = df["close"].diff()
-    gain = delta.clip(lower=0).rolling(14).mean()
-    loss = (-delta.clip(upper=0)).rolling(14).mean()
-    rsi = 100 - (100 / (1 + gain / loss))
-    rsi_latest = rsi.iloc[-1]
+    rsi = latest["rsi"]
 
     score = 0
 
@@ -66,9 +84,9 @@ def generate_signal(df):
         score -= 2
 
     # RSI
-    if rsi_latest < 30:
+    if rsi < 30:
         score += 2
-    elif rsi_latest > 70:
+    elif rsi > 70:
         score -= 2
 
     # Price position
@@ -88,9 +106,11 @@ def generate_signal(df):
     return {
         "signal": signal,
         "price": round(price, 2),
-        "rsi": round(rsi_latest, 1),
+        "rsi": round(rsi, 1),
         "score": score
     }
+
+
 # ---------------- ROUTES ----------------
 
 @app.route("/")
@@ -108,6 +128,8 @@ def config():
 
 @app.route("/signal")
 def signal():
+    global last_signal
+
     df = fetch_ohlcv(bot_config["symbol"])
     df = add_indicators(df)
 
@@ -116,7 +138,7 @@ def signal():
     price = sig["price"]
     rr = bot_config["risk_reward"]
 
-    # Stop loss & take profit
+    # Stop Loss / Take Profit
     if sig["signal"] == "BUY":
         sl = round(price * 0.98, 2)
         tp = round(price + (price - sl) * rr, 2)
@@ -126,6 +148,22 @@ def signal():
     else:
         sl, tp = None, None
 
+    # ✅ Telegram alert (no spam)
+    if sig["signal"] in ["BUY", "SELL"] and sig["signal"] != last_signal:
+        send_telegram(
+            f"""
+🚨 TRADE SIGNAL 🚨
+
+Symbol: {bot_config['symbol']}
+Signal: {sig['signal']}
+Price: {price}
+
+Stop Loss: {sl}
+Take Profit: {tp}
+            """
+        )
+        last_signal = sig["signal"]
+
     return jsonify({
         "symbol": bot_config["symbol"],
         "signal": sig["signal"],
@@ -133,19 +171,9 @@ def signal():
         "stop_loss": sl,
         "take_profit": tp
     })
-    
-    def send_telegram(msg):
-    TOKEN = "YOUR_TOKEN"
-    CHAT_ID = "8654099944:AAEuwAtfImHBnE3TlD3a3z_eWz-oBIQMLf8"
-
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-
-    requests.post(url, data={
-        "chat_id": CHAT_ID,
-        "text": msg
-    })
 
 
 # ---------------- RUN ----------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
+
