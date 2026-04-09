@@ -69,48 +69,67 @@ def add_indicators(df):
 
 
 # ---------------- SIGNAL ----------------
-def generate_signal(df):
-    latest = df.iloc[-1]
+@app.route("/signal")
+def signal():
+    global last_signal
 
-    price = latest["close"]
-    sma20 = latest["sma20"]
-    sma50 = latest["sma50"]
-    rsi = latest["rsi"]
+    results = []
 
-    score = 0
+    for symbol in bot_config["symbols"]:
+        try:
+            df = fetch_ohlcv(symbol)
+            df = add_indicators(df)
+            sig = generate_signal(df)
 
-    # 🔥 Trend strength
-    if sma20 > sma50:
-        score += 2
-    else:
-        score -= 2
+            price = sig["price"]
+            rr = bot_config["risk_reward"]
 
-    # 🔥 RSI zones (less strict = more signals)
-    if rsi < 35:
-        score += 1
-    elif rsi > 65:
-        score -= 1
+            if sig["signal"] == "BUY":
+                sl = round(price * 0.98, 2)
+                tp = round(price + (price - sl) * rr, 2)
+            elif sig["signal"] == "SELL":
+                sl = round(price * 1.02, 2)
+                tp = round(price - (sl - price) * rr, 2)
+            else:
+                sl, tp = None, None
 
-    # 🔥 Price confirmation
-    if price > sma20:
-        score += 1
-    else:
-        score -= 1
+            results.append({
+                "symbol": symbol,
+                "signal": sig["signal"],
+                "price": price,
+                "stop_loss": sl,
+                "take_profit": tp,
+                "score": sig["score"]
+            })
 
-    # 🎯 Final decision (adjusted for more trades)
-    if score >= 2:
-        signal = "BUY"
-    elif score <= -2:
-        signal = "SELL"
-    else:
-        signal = "HOLD"
+            # 🚨 Send alert per symbol
+            if sig["signal"] in ["BUY", "SELL"]:
+                key = f"{symbol}_{sig['signal']}"
+                if key != last_signal:
+                    send_telegram(
+                        f"""
+🚨 TRADE SIGNAL 🚨
 
-    return {
-        "signal": signal,
-        "price": round(price, 2),
-        "rsi": round(rsi, 1),
-        "score": score
-    }
+Symbol: {symbol}
+Signal: {sig['signal']}
+Price: {price}
+
+Stop Loss: {sl}
+Take Profit: {tp}
+                        """
+                    )
+                    last_signal = key
+
+        except Exception as e:
+            print(f"Error with {symbol}: {e}")
+
+    # 🎯 pick best signal
+    best = sorted(results, key=lambda x: abs(x["score"]), reverse=True)[0]
+
+    return jsonify({
+        "best_trade": best,
+        "all_signals": results
+    })
 
 # ---------------- ROUTES ----------------
 
