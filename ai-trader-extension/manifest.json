@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "AI Trader",
+  "version": "1.0",
+  "description": "AI trading signals popup",
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "permissions": ["activeTab"]
+}
