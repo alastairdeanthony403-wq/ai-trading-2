@@ -47,31 +47,50 @@ def generate_signal(df):
     latest = df.iloc[-1]
 
     price = latest["close"]
+    sma20 = latest["sma20"]
+    sma50 = latest["sma50"]
+
+    # RSI calculation
+    delta = df["close"].diff()
+    gain = delta.clip(lower=0).rolling(14).mean()
+    loss = (-delta.clip(upper=0)).rolling(14).mean()
+    rsi = 100 - (100 / (1 + gain / loss))
+    rsi_latest = rsi.iloc[-1]
 
     score = 0
 
-    if price > latest["sma20"]:
+    # Trend
+    if sma20 > sma50:
+        score += 2
+    else:
+        score -= 2
+
+    # RSI
+    if rsi_latest < 30:
+        score += 2
+    elif rsi_latest > 70:
+        score -= 2
+
+    # Price position
+    if price > sma20:
         score += 1
     else:
         score -= 1
 
-    if price > latest["sma50"]:
-        score += 1
-    else:
-        score -= 1
-
-    if score >= 2:
+    # Decision
+    if score >= 3:
         signal = "BUY"
-    elif score <= -2:
+    elif score <= -3:
         signal = "SELL"
     else:
         signal = "HOLD"
 
     return {
         "signal": signal,
-        "price": round(price, 2)
+        "price": round(price, 2),
+        "rsi": round(rsi_latest, 1),
+        "score": score
     }
-
 # ---------------- ROUTES ----------------
 
 @app.route("/")
