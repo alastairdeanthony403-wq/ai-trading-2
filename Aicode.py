@@ -1,5 +1,5 @@
 # ============================================================
-# AI Trading Web App (UI + Signals + Telegram Alerts)
+# AI Trading Web App (FINAL CLEAN VERSION)
 # ============================================================
 
 from flask import Flask, render_template, request, jsonify
@@ -10,9 +10,8 @@ app = Flask(__name__)
 
 # ---------------- CONFIG ----------------
 bot_config = {
-    "symbols": ["XAUUSD", "EURUSD", "US30", "NAS100"],
+    "symbols": ["AAPL", "TSLA", "MSFT", "AMZN"],
     "risk_reward": 2
-}
 }
 
 last_signal = None  # prevents spam alerts
@@ -20,10 +19,9 @@ last_signal = None  # prevents spam alerts
 
 # ---------------- TELEGRAM ----------------
 def send_telegram(msg):
-    TOKEN = "8654099944:AAEuwAtfImHBnE3TlD3a3z_eWz-oBIQMLf8" 
-    CHAT_ID = "8430956555"
-
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+    TOKEN = "AAFtFv9C4Tkp-LmAm-giQ7Nfx9-Hp_EQjYg"   
+    CHAT_ID = "8654099944"   
+    url = f"https://api.telegram.org/bot{AAFtFv9C4Tkp-LmAm-giQ7Nfx9-Hp_EQjYg}/sendMessage"
 
     requests.post(url, data={
         "chat_id": CHAT_ID,
@@ -59,7 +57,6 @@ def add_indicators(df):
     df["sma20"] = df["close"].rolling(20).mean()
     df["sma50"] = df["close"].rolling(50).mean()
 
-    # RSI
     delta = df["close"].diff()
     gain = delta.clip(lower=0).rolling(14).mean()
     loss = (-delta.clip(upper=0)).rolling(14).mean()
@@ -68,7 +65,66 @@ def add_indicators(df):
     return df.dropna()
 
 
-# ---------------- SIGNAL ----------------
+# ---------------- SIGNAL LOGIC ----------------
+def generate_signal(df):
+    latest = df.iloc[-1]
+
+    price = latest["close"]
+    sma20 = latest["sma20"]
+    sma50 = latest["sma50"]
+    rsi = latest["rsi"]
+
+    score = 0
+
+    # Trend
+    if sma20 > sma50:
+        score += 2
+    else:
+        score -= 2
+
+    # RSI
+    if rsi < 35:
+        score += 1
+    elif rsi > 65:
+        score -= 1
+
+    # Price position
+    if price > sma20:
+        score += 1
+    else:
+        score -= 1
+
+    # ✅ HIGH CONFIDENCE DECISION
+    if score >= 3:
+        signal = "BUY"
+    elif score <= -3:
+        signal = "SELL"
+    else:
+        signal = "HOLD"
+
+    return {
+        "signal": signal,
+        "price": round(price, 2),
+        "rsi": round(rsi, 1),
+        "score": score
+    }
+
+
+# ---------------- ROUTES ----------------
+
+@app.route("/")
+def home():
+    return render_template("index.html")
+
+
+@app.route("/config", methods=["POST"])
+def config():
+    data = request.json
+    bot_config["symbols"] = data.get("symbols", ["AAPL"])
+    bot_config["risk_reward"] = float(data.get("risk_reward", 2))
+    return jsonify({"status": "updated"})
+
+
 @app.route("/signal")
 def signal():
     global last_signal
@@ -93,18 +149,21 @@ def signal():
             else:
                 sl, tp = None, None
 
-            results.append({
+            result = {
                 "symbol": symbol,
                 "signal": sig["signal"],
                 "price": price,
                 "stop_loss": sl,
                 "take_profit": tp,
                 "score": sig["score"]
-            })
+            }
 
-            # 🚨 Send alert per symbol
-        if sig["signal"] in ["BUY", "SELL"] and abs(sig["score"]) >= 3:
+            results.append(result)
+
+            # 🚨 HIGH-CONFIDENCE TELEGRAM ALERT
+            if sig["signal"] in ["BUY", "SELL"] and abs(sig["score"]) >= 3:
                 key = f"{symbol}_{sig['signal']}"
+
                 if key != last_signal:
                     send_telegram(
                         f"""
@@ -123,7 +182,7 @@ Take Profit: {tp}
         except Exception as e:
             print(f"Error with {symbol}: {e}")
 
-    # 🎯 pick best signal
+    # Pick best trade
     best = sorted(results, key=lambda x: abs(x["score"]), reverse=True)[0]
 
     return jsonify({
@@ -131,69 +190,7 @@ Take Profit: {tp}
         "all_signals": results
     })
 
-# ---------------- ROUTES ----------------
-
-@app.route("/")
-def home():
-    return render_template("index.html")
-
-
-@app.route("/config", methods=["POST"])
-def config():
-    data = request.json
-    bot_config["symbol"] = data.get("symbol", "AAPL")
-    bot_config["risk_reward"] = float(data.get("risk_reward", 2))
-    return jsonify({"status": "updated"})
-
-
-@app.route("/signal")
-def signal():
-    global last_signal
-
-    df = fetch_ohlcv(bot_config["symbol"])
-    df = add_indicators(df)
-
-    sig = generate_signal(df)
-
-    price = sig["price"]
-    rr = bot_config["risk_reward"]
-
-    # Stop Loss / Take Profit
-    if sig["signal"] == "BUY":
-        sl = round(price * 0.98, 2)
-        tp = round(price + (price - sl) * rr, 2)
-    elif sig["signal"] == "SELL":
-        sl = round(price * 1.02, 2)
-        tp = round(price - (sl - price) * rr, 2)
-    else:
-        sl, tp = None, None
-
-    # ✅ Telegram alert (no spam)
-    if sig["signal"] in ["BUY", "SELL"] and sig["signal"] != last_signal:
-        send_telegram(
-            f"""
-🚨 TRADE SIGNAL 🚨
-
-Symbol: {bot_config['symbol']}
-Signal: {sig['signal']}
-Price: {price}
-
-Stop Loss: {sl}
-Take Profit: {tp}
-            """
-        )
-        last_signal = sig["signal"]
-
-    return jsonify({
-        "symbol": bot_config["symbol"],
-        "signal": sig["signal"],
-        "price": price,
-        "stop_loss": sl,
-        "take_profit": tp
-    })
-
 
 # ---------------- RUN ----------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
-
