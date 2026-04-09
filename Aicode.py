@@ -78,28 +78,28 @@ def generate_signal(df):
 
     score = 0
 
-    # Trend
+    # 🔥 Trend strength
     if sma20 > sma50:
         score += 2
     else:
         score -= 2
 
-    # RSI
-    if rsi < 30:
-        score += 2
-    elif rsi > 70:
-        score -= 2
+    # 🔥 RSI zones (less strict = more signals)
+    if rsi < 35:
+        score += 1
+    elif rsi > 65:
+        score -= 1
 
-    # Price position
+    # 🔥 Price confirmation
     if price > sma20:
         score += 1
     else:
         score -= 1
 
-    # Decision
-    if score >= 3:
+    # 🎯 Final decision (adjusted for more trades)
+    if score >= 2:
         signal = "BUY"
-    elif score <= -3:
+    elif score <= -2:
         signal = "SELL"
     else:
         signal = "HOLD"
@@ -110,7 +110,6 @@ def generate_signal(df):
         "rsi": round(rsi, 1),
         "score": score
     }
-
 
 # ---------------- ROUTES ----------------
 
