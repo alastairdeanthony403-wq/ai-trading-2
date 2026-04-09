@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AI Trader</title>
+</head>
+<body>
+
+<h1>AI Trading Dashboard</h1>
+
+<label>Symbol:</label>
+<input id="symbol" value="AAPL"><br><br>
+
+<label>Risk/Reward:</label>
+<input id="rr" value="2"><br><br>
+
+<button onclick="save()">Save Settings</button>
+
+<h2>Signal</h2>
+<pre id="output">Waiting...</pre>
+
+<script>
+function save() {
+    fetch('/config', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            symbol: document.getElementById('symbol').value,
+            risk_reward: document.getElementById('rr').value
+        })
+    });
+}
+
+async function update() {
+    const res = await fetch('/signal');
+    const data = await res.json();
+
+    document.getElementById("output").innerText =
+        JSON.stringify(data, null, 2);
+
+    if (data.signal === "BUY" || data.signal === "SELL") {
+        alert(`🚨 ${data.signal} SIGNAL`);
+    }
+}
+
+setInterval(update, 10000);
+</script>
+
+</body>
+</html>
