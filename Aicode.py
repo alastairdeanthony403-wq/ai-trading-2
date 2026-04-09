@@ -1,27 +1,30 @@
 # ============================================================
-# AI Trading Web App (FINAL CLEAN VERSION)
+# AI Trading Web App (UPGRADED + DEBUG + DYNAMIC SYMBOLS)
 # ============================================================
 
 from flask import Flask, render_template, request, jsonify
+from flask_cors import CORS
 import pandas as pd
 import requests
 
 app = Flask(__name__)
+CORS(app)
 
 # ---------------- CONFIG ----------------
 bot_config = {
-    "symbols": ["AAPL", "TSLA", "MSFT", "AMZN"],
+    "symbols": ["US30", "XAUUSD", "EURUSD", "NAS100"],
     "risk_reward": 2
 }
 
-last_signal = None  # prevents spam alerts
+last_signal = None
 
 
 # ---------------- TELEGRAM ----------------
 def send_telegram(msg):
-    TOKEN = "AAFtFv9C4Tkp-LmAm-giQ7Nfx9-Hp_EQjYg"   
-    CHAT_ID = "8654099944"   
-    url = f"https://api.telegram.org/bot{AAFtFv9C4Tkp-LmAm-giQ7Nfx9-Hp_EQjYg}/sendMessage"
+    TOKEN = "YOUR_NEW_TOKEN"   # 🔴 REPLACE
+    CHAT_ID = "YOUR_CHAT_ID"
+
+    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
 
     requests.post(url, data={
         "chat_id": CHAT_ID,
@@ -31,25 +34,30 @@ def send_telegram(msg):
 
 # ---------------- DATA FETCH ----------------
 def fetch_ohlcv(symbol: str):
-    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range=1mo&interval=1h"
-    headers = {"User-Agent": "Mozilla/5.0"}
+    try:
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range=1mo&interval=1h"
+        headers = {"User-Agent": "Mozilla/5.0"}
 
-    r = requests.get(url, headers=headers)
-    data = r.json()["chart"]["result"][0]
+        r = requests.get(url, headers=headers)
+        data = r.json()["chart"]["result"][0]
 
-    ts = data["timestamp"]
-    q = data["indicators"]["quote"][0]
+        ts = data["timestamp"]
+        q = data["indicators"]["quote"][0]
 
-    df = pd.DataFrame({
-        "date": pd.to_datetime(ts, unit="s"),
-        "open": q["open"],
-        "high": q["high"],
-        "low": q["low"],
-        "close": q["close"],
-        "volume": q["volume"]
-    }).dropna()
+        df = pd.DataFrame({
+            "date": pd.to_datetime(ts, unit="s"),
+            "open": q["open"],
+            "high": q["high"],
+            "low": q["low"],
+            "close": q["close"],
+            "volume": q["volume"]
+        }).dropna()
 
-    return df
+        return df
+
+    except Exception as e:
+        print(f"❌ Data error for {symbol}: {e}")
+        return None
 
 
 # ---------------- INDICATORS ----------------
@@ -65,7 +73,7 @@ def add_indicators(df):
     return df.dropna()
 
 
-# ---------------- SIGNAL LOGIC ----------------
+# ---------------- SIGNAL ----------------
 def generate_signal(df):
     latest = df.iloc[-1]
 
@@ -76,25 +84,21 @@ def generate_signal(df):
 
     score = 0
 
-    # Trend
     if sma20 > sma50:
         score += 2
     else:
         score -= 2
 
-    # RSI
     if rsi < 35:
         score += 1
     elif rsi > 65:
         score -= 1
 
-    # Price position
     if price > sma20:
         score += 1
     else:
         score -= 1
 
-    # ✅ HIGH CONFIDENCE DECISION
     if score >= 3:
         signal = "BUY"
     elif score <= -3:
@@ -117,14 +121,24 @@ def home():
     return render_template("index.html")
 
 
-@app.route("/config", methods=["POST"])
-def config():
+# 🔧 UPDATE SYMBOL LIST
+@app.route("/symbols", methods=["POST"])
+def update_symbols():
     data = request.json
-    bot_config["symbols"] = data.get("symbols", ["AAPL"])
-    bot_config["risk_reward"] = float(data.get("risk_reward", 2))
-    return jsonify({"status": "updated"})
+    bot_config["symbols"] = data.get("symbols", bot_config["symbols"])
+    return jsonify({"symbols": bot_config["symbols"]})
 
 
+# 🔍 DEBUG ROUTE
+@app.route("/debug")
+def debug():
+    return jsonify({
+        "symbols": bot_config["symbols"],
+        "last_signal": last_signal
+    })
+
+
+# 📊 MAIN SIGNAL ROUTE
 @app.route("/signal")
 def signal():
     global last_signal
@@ -132,8 +146,12 @@ def signal():
     results = []
 
     for symbol in bot_config["symbols"]:
+        df = fetch_ohlcv(symbol)
+
+        if df is None or len(df) < 50:
+            continue
+
         try:
-            df = fetch_ohlcv(symbol)
             df = add_indicators(df)
             sig = generate_signal(df)
 
@@ -160,7 +178,9 @@ def signal():
 
             results.append(result)
 
-            # 🚨 HIGH-CONFIDENCE TELEGRAM ALERT
+            print(f"📊 {symbol}: {sig['signal']} | Score: {sig['score']}")
+
+            # 🚨 ALERT
             if sig["signal"] in ["BUY", "SELL"] and abs(sig["score"]) >= 3:
                 key = f"{symbol}_{sig['signal']}"
 
@@ -173,16 +193,18 @@ Symbol: {symbol}
 Signal: {sig['signal']}
 Price: {price}
 
-Stop Loss: {sl}
-Take Profit: {tp}
+SL: {sl}
+TP: {tp}
                         """
                     )
                     last_signal = key
 
         except Exception as e:
-            print(f"Error with {symbol}: {e}")
+            print(f"❌ Error with {symbol}: {e}")
 
-    # Pick best trade
+    if not results:
+        return jsonify({"error": "No data available"})
+
     best = sorted(results, key=lambda x: abs(x["score"]), reverse=True)[0]
 
     return jsonify({
