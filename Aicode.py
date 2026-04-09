@@ -133,6 +133,17 @@ def signal():
         "stop_loss": sl,
         "take_profit": tp
     })
+    
+    def send_telegram(msg):
+    TOKEN = "YOUR_TOKEN"
+    CHAT_ID = "8654099944:AAEuwAtfImHBnE3TlD3a3z_eWz-oBIQMLf8"
+
+    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+
+    requests.post(url, data={
+        "chat_id": CHAT_ID,
+        "text": msg
+    })
 
 
 # ---------------- RUN ----------------
