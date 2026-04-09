@@ -103,7 +103,7 @@ def signal():
             })
 
             # 🚨 Send alert per symbol
-            if sig["signal"] in ["BUY", "SELL"]:
+        if sig["signal"] in ["BUY", "SELL"] and abs(sig["score"]) >= 3:
                 key = f"{symbol}_{sig['signal']}"
                 if key != last_signal:
                     send_telegram(
