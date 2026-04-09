@@ -19,7 +19,8 @@ last_signal = None  # prevents spam alerts
 
 # ---------------- TELEGRAM ----------------
 def send_telegram(msg):
-    TOKEN = "8654099944:AAEuwAtfImHBnE3TlD3a3z_eWz-oBIQMLf8" CHAT_ID = "8430956555"
+    TOKEN = "8654099944:AAEuwAtfImHBnE3TlD3a3z_eWz-oBIQMLf8" 
+    CHAT_ID = "8430956555"
 
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
 
