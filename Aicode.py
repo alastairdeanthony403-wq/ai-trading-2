@@ -10,8 +10,9 @@ app = Flask(__name__)
 
 # ---------------- CONFIG ----------------
 bot_config = {
-    "symbol": "AAPL",
+    "symbols": ["XAUUSD", "EURUSD", "US30", "NAS100"],
     "risk_reward": 2
+}
 }
 
 last_signal = None  # prevents spam alerts
