@@ -195,7 +195,7 @@ def signal():
         if df is None or len(df) < 50 or "close" not in df:
             continue
 
-      try:
+    try:
     df = add_indicators(df)
     sig = generate_signal(df)
 
