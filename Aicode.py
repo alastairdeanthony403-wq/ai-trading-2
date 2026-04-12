@@ -1,5 +1,5 @@
 # ============================================================
-# AI Trading Web App (UPGRADED + DEBUG + DYNAMIC SYMBOLS)
+# AI Trading Web App (BINANCE + YAHOO FINAL VERSION)
 # ============================================================
 
 from flask import Flask, render_template, request, jsonify
@@ -12,7 +12,7 @@ CORS(app)
 
 # ---------------- CONFIG ----------------
 bot_config = {
-    "symbols": ["AAPL","TSLA","MSFT","AMZN"],
+    "symbols": ["BTCUSDT", "ETHUSDT", "AAPL", "TSLA"],
     "risk_reward": 2
 }
 
@@ -21,19 +21,52 @@ last_signal = None
 
 # ---------------- TELEGRAM ----------------
 def send_telegram(msg):
-    TOKEN = "AAEDn-8QO0nT6FlsBwl1QYJRMloIoja0Rdo"   # 🔴 REPLACE
-    CHAT_ID = "8654099944"
+    TOKEN = "YOUR_BOT_TOKEN"
+    CHAT_ID = "YOUR_CHAT_ID"
 
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
 
-    requests.post(url, data={
-        "chat_id": CHAT_ID,
-        "text": msg
-    })
+    try:
+        requests.post(url, data={
+            "chat_id": CHAT_ID,
+            "text": msg
+        })
+    except Exception as e:
+        print(f"❌ Telegram error: {e}")
 
 
 # ---------------- DATA FETCH ----------------
-def fetch_ohlcv(symbol: str):
+
+# ✅ Yahoo (stocks, forex, indices)
+def fetch_yahoo(symbol: str):
+    try:
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range=1mo&interval=1h"
+        headers = {"User-Agent": "Mozilla/5.0"}
+
+        r = requests.get(url, headers=headers)
+        data = r.json()["chart"]["result"][0]
+
+        ts = data["timestamp"]
+        q = data["indicators"]["quote"][0]
+
+        df = pd.DataFrame({
+            "date": pd.to_datetime(ts, unit="s"),
+            "open": q["open"],
+            "high": q["high"],
+            "low": q["low"],
+            "close": q["close"],
+            "volume": q["volume"]
+        }).dropna()
+
+        return df
+
+    except Exception as e:
+        print(f"❌ Yahoo error for {symbol}: {e}")
+        return None
+
+
+# ✅ Binance (crypto)
+def fetch_binance(symbol: str):
     try:
         url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval=1h&limit=200"
         r = requests.get(url)
@@ -57,6 +90,15 @@ def fetch_ohlcv(symbol: str):
         print(f"❌ Binance error for {symbol}: {e}")
         return None
 
+
+# 🔥 SMART ROUTER (auto choose source)
+def fetch_data(symbol: str):
+    if "USDT" in symbol:
+        return fetch_binance(symbol)
+    else:
+        return fetch_yahoo(symbol)
+
+
 # ---------------- INDICATORS ----------------
 def add_indicators(df):
     df["sma20"] = df["close"].rolling(20).mean()
@@ -70,7 +112,7 @@ def add_indicators(df):
     return df.dropna()
 
 
-# ---------------- SIGNAL ----------------
+# ---------------- SIGNAL LOGIC ----------------
 def generate_signal(df):
     latest = df.iloc[-1]
 
@@ -81,21 +123,25 @@ def generate_signal(df):
 
     score = 0
 
+    # Trend
     if sma20 > sma50:
         score += 2
     else:
         score -= 2
 
+    # RSI
     if rsi < 35:
         score += 1
     elif rsi > 65:
         score -= 1
 
+    # Price position
     if price > sma20:
         score += 1
     else:
         score -= 1
 
+    # Decision
     if score >= 3:
         signal = "BUY"
     elif score <= -3:
@@ -118,15 +164,16 @@ def home():
     return render_template("index.html")
 
 
-# 🔧 UPDATE SYMBOL LIST
+# 🔧 Update symbols dynamically
 @app.route("/symbols", methods=["POST"])
 def update_symbols():
     data = request.json
     bot_config["symbols"] = data.get("symbols", bot_config["symbols"])
+    bot_config["risk_reward"] = float(data.get("risk_reward", 2))
     return jsonify({"symbols": bot_config["symbols"]})
 
 
-# 🔍 DEBUG ROUTE
+# 🔍 Debug route
 @app.route("/debug")
 def debug():
     return jsonify({
@@ -135,7 +182,7 @@ def debug():
     })
 
 
-# 📊 MAIN SIGNAL ROUTE
+# 📊 Main signal route
 @app.route("/signal")
 def signal():
     global last_signal
@@ -143,9 +190,9 @@ def signal():
     results = []
 
     for symbol in bot_config["symbols"]:
-        df = fetch_ohlcv(symbol)
+        df = fetch_data(symbol)
 
-        if df is None or len(df) < 50:
+        if df is None or len(df) < 50 or "close" not in df:
             continue
 
         try:
@@ -177,7 +224,7 @@ def signal():
 
             print(f"📊 {symbol}: {sig['signal']} | Score: {sig['score']}")
 
-            # 🚨 ALERT
+            # 🚨 HIGH CONFIDENCE ALERT
             if sig["signal"] in ["BUY", "SELL"] and abs(sig["score"]) >= 3:
                 key = f"{symbol}_{sig['signal']}"
 
@@ -209,6 +256,10 @@ TP: {tp}
         "all_signals": results
     })
 
+
+# ---------------- RUN ----------------
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=10000)
 
 # ---------------- RUN ----------------
 if __name__ == "__main__":
