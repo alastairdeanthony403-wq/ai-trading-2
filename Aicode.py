@@ -248,8 +248,11 @@ TP: {tp}
         except Exception as e:
             print(f"❌ Error with {symbol}: {e}")
 
-    if not results:
-        return jsonify({"error": "No data available"})
+if not results:
+    return jsonify({
+        "message": "No high-confidence trades right now",
+        "all_signals": []
+    })
 
     best = sorted(results, key=lambda x: abs(x["score"]), reverse=True)[0]
 
