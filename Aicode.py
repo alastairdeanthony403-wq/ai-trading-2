@@ -220,7 +220,9 @@ def signal():
                 "score": sig["score"]
             }
 
-            results.append(result)
+            # ONLY KEEP STRONG TRADES
+if abs(sig["score"]) >= 4:
+    results.append(result)
 
             print(f"📊 {symbol}: {sig['signal']} | Score: {sig['score']}")
 
