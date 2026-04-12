@@ -1,12 +1,57 @@
 <!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AI Stock Dashboard</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
+<html>
+<head>
+    <title>AI Trading Dashboard</title>
+</head>
+<body>
+
+<h1>AI Trading Dashboard</h1>
+
+<label>Symbols (comma separated):</label><br>
+<input id="symbols" value="BTCUSDT,ETHUSDT"><br><br>
+
+<label>Risk/Reward:</label><br>
+<input id="rr" value="2"><br><br>
+
+<button onclick="saveConfig()">Save Settings</button>
+
+<h2>Signal</h2>
+<pre id="output">Loading...</pre>
+
+<script>
+const API = "/signal";
+
+function loadSignals() {
+    fetch(API)
+    .then(res => res.json())
+    .then(data => {
+        document.getElementById("output").textContent =
+            JSON.stringify(data, null, 2);
+    })
+    .catch(err => {
+        document.getElementById("output").textContent = "Error loading data";
+    });
+}
+
+function saveConfig() {
+    const symbols = document.getElementById("symbols").value.split(",");
+    const rr = document.getElementById("rr").value;
+
+    fetch("/symbols", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({symbols: symbols})
+    });
+
+    loadSignals();
+}
+
+// refresh every 10 seconds
+setInterval(loadSignals, 10000);
+
+// first load
+loadSignals();
+</script>
+
+</body>
 </html>
