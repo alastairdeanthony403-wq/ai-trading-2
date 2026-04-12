@@ -12,7 +12,7 @@ CORS(app)
 
 # ---------------- CONFIG ----------------
 bot_config = {
-    "symbols": ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT"],
+    "symbols": ["AAPL","TSLA","MSFT","AMZN"],
     "risk_reward": 2
 }
 
