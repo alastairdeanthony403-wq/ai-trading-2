@@ -12,7 +12,7 @@ CORS(app)
 
 # ---------------- CONFIG ----------------
 bot_config = {
-    "symbols": ["^DJI", "GC=F", "EURUSD=X", "^IXIC"],
+    "symbols": ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT"],
     "risk_reward": 2
 }
 
@@ -35,34 +35,26 @@ def send_telegram(msg):
 # ---------------- DATA FETCH ----------------
 def fetch_ohlcv(symbol: str):
     try:
-        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range=1mo&interval=1h"
-        headers = {"User-Agent": "Mozilla/5.0"}
+        url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval=1h&limit=200"
+        r = requests.get(url)
+        data = r.json()
 
-        r = requests.get(url, headers=headers)
-        json_data = r.json()
+        df = pd.DataFrame(data, columns=[
+            "time", "open", "high", "low", "close", "volume",
+            "_", "_", "_", "_", "_", "_"
+        ])
 
-        if not json_data["chart"]["result"]:
-            print(f"❌ No data for {symbol}")
-            return None
+        df["date"] = pd.to_datetime(df["time"], unit="ms")
+        df["open"] = df["open"].astype(float)
+        df["high"] = df["high"].astype(float)
+        df["low"] = df["low"].astype(float)
+        df["close"] = df["close"].astype(float)
+        df["volume"] = df["volume"].astype(float)
 
-        data = json_data["chart"]["result"][0]
-
-        ts = data["timestamp"]
-        q = data["indicators"]["quote"][0]
-
-        df = pd.DataFrame({
-            "date": pd.to_datetime(ts, unit="s"),
-            "open": q["open"],
-            "high": q["high"],
-            "low": q["low"],
-            "close": q["close"],
-            "volume": q["volume"]
-        }).dropna()
-
-        return df
+        return df[["date", "open", "high", "low", "close", "volume"]]
 
     except Exception as e:
-        print(f"❌ Data error for {symbol}: {e}")
+        print(f"❌ Binance error for {symbol}: {e}")
         return None
 
 # ---------------- INDICATORS ----------------
