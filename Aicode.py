@@ -12,7 +12,7 @@ CORS(app)
 
 # ---------------- CONFIG ----------------
 bot_config = {
-    "symbols": ["US30", "XAUUSD", "EURUSD", "NAS100"],
+    "symbols": ["^DJI", "GC=F", "EURUSD=X", "^IXIC"]
     "risk_reward": 2
 }
 
