@@ -59,13 +59,23 @@ function saveConfig() {
 
     loadSignals();
 }
+let lastAlert = null;
 
+function showPopup(text) {
+    const popup = document.getElementById("popup");
+    popup.innerText = text;
+    popup.style.display = "block";
+
+    setTimeout(() => {
+        popup.style.display = "none";
+    }, 5000);
+}
 // refresh every 10 seconds
 setInterval(loadSignals, 10000);
 
 // first load
 loadSignals();
 </script>
-
+<div id="popup"></div>
 </body>
 </html>
