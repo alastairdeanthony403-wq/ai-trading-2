@@ -21,8 +21,8 @@ last_signal = None
 
 # ---------------- TELEGRAM ----------------
 def send_telegram(msg):
-    TOKEN = "YOUR_NEW_TOKEN"   # 🔴 REPLACE
-    CHAT_ID = "YOUR_CHAT_ID"
+    TOKEN = "AAEDn-8QO0nT6FlsBwl1QYJRMloIoja0Rdo"   # 🔴 REPLACE
+    CHAT_ID = "8654099944"
 
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
 
