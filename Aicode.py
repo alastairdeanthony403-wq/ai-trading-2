@@ -12,7 +12,7 @@ CORS(app)
 
 # ---------------- CONFIG ----------------
 bot_config = {
-    "symbols": ["^DJI", "GC=F", "EURUSD=X", "^IXIC"]
+    "symbols": ["^DJI", "GC=F", "EURUSD=X", "^IXIC"],
     "risk_reward": 2
 }
 
@@ -39,7 +39,13 @@ def fetch_ohlcv(symbol: str):
         headers = {"User-Agent": "Mozilla/5.0"}
 
         r = requests.get(url, headers=headers)
-        data = r.json()["chart"]["result"][0]
+        json_data = r.json()
+
+        if not json_data["chart"]["result"]:
+            print(f"❌ No data for {symbol}")
+            return None
+
+        data = json_data["chart"]["result"][0]
 
         ts = data["timestamp"]
         q = data["indicators"]["quote"][0]
@@ -58,7 +64,6 @@ def fetch_ohlcv(symbol: str):
     except Exception as e:
         print(f"❌ Data error for {symbol}: {e}")
         return None
-
 
 # ---------------- INDICATORS ----------------
 def add_indicators(df):
