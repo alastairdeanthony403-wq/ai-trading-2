@@ -123,28 +123,28 @@ def generate_signal(df):
 
     score = 0
 
-    # Trend
+    # 🔥 STRONG TREND (more strict)
     if sma20 > sma50:
         score += 2
-    else:
+    elif sma20 < sma50:
         score -= 2
 
-    # RSI
-    if rsi < 35:
-        score += 1
-    elif rsi > 65:
-        score -= 1
+    # 🔥 BETTER RSI FILTER
+    if rsi < 30:
+        score += 2   # strong oversold
+    elif rsi > 70:
+        score -= 2   # strong overbought
 
-    # Price position
+    # 🔥 PRICE CONFIRMATION
     if price > sma20:
         score += 1
     else:
         score -= 1
 
-    # Decision
-    if score >= 3:
+    # 🔥 ELITE FILTER
+    if score >= 4:
         signal = "BUY"
-    elif score <= -3:
+    elif score <= -4:
         signal = "SELL"
     else:
         signal = "HOLD"
