@@ -131,6 +131,10 @@ function loadData() {
 
         document.getElementById("signals").innerHTML = html;
 
+// 👇 ADD THIS
+const symbols = data.all_signals.map(s => s.symbol);
+loadCharts(symbols);
+
     });
 }
 
