@@ -190,10 +190,10 @@ def signal():
     results = []
 
     for symbol in bot_config["symbols"]:
-        df = fetch_data(symbol)
+    df = fetch_ohlcv(symbol)
 
-        if df is None or len(df) < 50 or "close" not in df:
-            continue
+    if df is None or len(df) < 50:
+        continue
 
     try:
         df = add_indicators(df)
@@ -202,33 +202,30 @@ def signal():
         price = sig["price"]
         rr = bot_config["risk_reward"]
 
-    try:
         if sig["signal"] == "BUY":
-        sl = round(price * 0.98, 2)
-        tp = round(price + (price - sl) * rr, 2)
-    elif sig["signal"] == "SELL":
-        sl = round(price * 1.02, 2)
-        tp = round(price - (sl - price) * rr, 2)
-    else:
-        sl, tp = None, None
+            sl = round(price * 0.98, 2)
+            tp = round(price + (price - sl) * rr, 2)
+        elif sig["signal"] == "SELL":
+            sl = round(price * 1.02, 2)
+            tp = round(price - (sl - price) * rr, 2)
+        else:
+            sl, tp = None, None
 
-    result = {
-        "symbol": symbol,
-        "signal": sig["signal"],
-        "price": price,
-        "stop_loss": sl,
-        "take_profit": tp,
-        "score": sig["score"]
-    }
+        result = {
+            "symbol": symbol,
+            "signal": sig["signal"],
+            "price": price,
+            "stop_loss": sl,
+            "take_profit": tp,
+            "score": sig["score"]
+        }
 
-    # ✅ ONLY KEEP STRONG TRADES
-    if abs(sig["score"]) >= 4:
-        results.append(result)
+        if abs(sig["score"]) >= 4:
+            results.append(result)
+            print(f"🔥 {symbol}: {sig['signal']} | Score: {sig['score']}")
 
-        print(f"🔥 {symbol}: {sig['signal']} | Score: {sig['score']}")
-
-except Exception as e:
-    print(f"❌ Error with {symbol}: {e}")
+    except Exception as e:
+        print(f"❌ Error with {symbol}: {e}")
         # 🚨 HIGH CONFIDENCE ALERT
         if sig["signal"] in ["BUY", "SELL"]:
             key = f"{symbol}_{sig['signal']}"
