@@ -2,7 +2,10 @@
 <html>
 <head>
     <title>AI Trading Dashboard</title>
+
+    <!-- ✅ CORRECT PLACE -->
     <script src="https://s3.tradingview.com/tv.js"></script>
+
     <style>
         body {
             font-family: Arial;
@@ -11,9 +14,7 @@
             text-align: center;
         }
 
-        h1 {
-            margin-top: 20px;
-        }
+        h1 { margin-top: 20px; }
 
         .container {
             max-width: 900px;
@@ -33,9 +34,7 @@
             cursor: pointer;
         }
 
-        button:hover {
-            background: #16a34a;
-        }
+        button:hover { background: #16a34a; }
 
         .card {
             background: #1e293b;
@@ -44,20 +43,9 @@
             border-radius: 10px;
         }
 
-        .buy {
-            color: #22c55e;
-            font-weight: bold;
-        }
-
-        .sell {
-            color: #ef4444;
-            font-weight: bold;
-        }
-
-        .hold {
-            color: #facc15;
-        }
-        <script src="https://s3.tradingview.com/tv.js"></script>
+        .buy { color: #22c55e; font-weight: bold; }
+        .sell { color: #ef4444; font-weight: bold; }
+        .hold { color: #facc15; }
     </style>
 </head>
 
@@ -67,20 +55,18 @@
 
     <h1>🚀 AI Trading Dashboard</h1>
 
-    <!-- INPUT -->
     <div class="card">
         <input id="symbols" value="BTCUSDT,ETHUSDT,AAPL,TSLA">
         <input id="rr" value="2">
         <button onclick="saveConfig()">Save</button>
     </div>
 
-    <!-- BEST TRADE -->
     <h2>🔥 Best Trade</h2>
     <div id="best"></div>
 
-    <!-- ALL SIGNALS -->
     <h2>📊 All Signals</h2>
     <div id="signals"></div>
+
     <div id="charts"></div>
 
 </div>
@@ -99,43 +85,44 @@ function loadData() {
     .then(res => res.json())
     .then(data => {
 
-    // BEST TRADE
-    if (data.best_trade) {
-        const b = data.best_trade;
-        document.getElementById("best").innerHTML = `
-            <div class="card">
-                <h3>${b.symbol}</h3>
-                <p class="${getColor(b.signal)}">${b.signal}</p>
-                <p>Price: ${b.price}</p>
-                <p>SL: ${b.stop_loss}</p>
-                <p>TP: ${b.take_profit}</p>
-                <p>Score: ${b.score}</p>
-            </div>
-        `;
-    }
+        // BEST TRADE
+        if (data.best_trade) {
+            const b = data.best_trade;
+            document.getElementById("best").innerHTML = `
+                <div class="card">
+                    <h3>${b.symbol}</h3>
+                    <p class="${getColor(b.signal)}">${b.signal}</p>
+                    <p>Price: ${b.price}</p>
+                    <p>SL: ${b.stop_loss}</p>
+                    <p>TP: ${b.take_profit}</p>
+                    <p>Score: ${b.score}</p>
+                </div>
+            `;
+        }
 
-    // ALL SIGNALS
-    let html = "";
-    data.all_signals.forEach(s => {
-        html += `
-            <div class="card">
-                <h3>${s.symbol}</h3>
-                <p class="${getColor(s.signal)}">${s.signal}</p>
-                <p>Price: ${s.price}</p>
-                <p>SL: ${s.stop_loss}</p>
-                <p>TP: ${s.take_profit}</p>
-                <p>Score: ${s.score}</p>
-            </div>
-        `;
+        // ALL SIGNALS
+        let html = "";
+        data.all_signals.forEach(s => {
+            html += `
+                <div class="card">
+                    <h3>${s.symbol}</h3>
+                    <p class="${getColor(s.signal)}">${s.signal}</p>
+                    <p>Price: ${s.price}</p>
+                    <p>SL: ${s.stop_loss}</p>
+                    <p>TP: ${s.take_profit}</p>
+                    <p>Score: ${s.score}</p>
+                </div>
+            `;
+        });
+
+        document.getElementById("signals").innerHTML = html;
+
+        // ✅ LOAD CHARTS
+        const symbols = data.all_signals.map(s => s.symbol);
+        loadCharts(symbols);
+
     });
-
-    document.getElementById("signals").innerHTML = html;
-
-    // ✅ MUST BE INSIDE HERE
-    const symbols = data.all_signals.map(s => s.symbol);
-    loadCharts(symbols);
-
-})
+}
 
 function saveConfig() {
     const symbols = document.getElementById("symbols").value.split(",");
@@ -153,10 +140,6 @@ function saveConfig() {
     loadData();
 }
 
-// AUTO REFRESH
-setInterval(loadData, 5000);
-loadData();
-   
 function loadCharts(symbols) {
     let html = "";
 
@@ -174,49 +157,23 @@ function loadCharts(symbols) {
     setTimeout(() => {
         symbols.forEach(symbol => {
             new TradingView.widget({
-                "container_id": `tv_${symbol}`,
-                "width": "100%",
-                "height": 400,
-                "symbol": symbol.includes("USDT") 
-                    ? "BINANCE:" + symbol 
+                container_id: `tv_${symbol}`,
+                width: "100%",
+                height: 400,
+                symbol: symbol.includes("USDT")
+                    ? "BINANCE:" + symbol
                     : "NASDAQ:" + symbol,
-                "interval": "60",
-                "theme": "dark",
-                "style": "1"
+                interval: "60",
+                theme: "dark",
+                style: "1"
             });
         });
     }, 500);
 }
-    const symbols = data.all_signals.map(s => s.symbol);
-loadCharts(symbols);
-function loadCharts(symbols) {
-    let html = "";
 
-    symbols.forEach(symbol => {
-        html += `
-        <div class="card">
-            <h3>${symbol} Chart</h3>
-            <div id="tv_${symbol}" style="height:400px;"></div>
-        </div>
-        `;
-    });
-
-    document.getElementById("charts").innerHTML = html;
-
-    symbols.forEach(symbol => {
-        new TradingView.widget({
-            "container_id": `tv_${symbol}`,
-            "width": "100%",
-            "height": 400,
-            "symbol": symbol.replace("USDT", "USDT"), 
-            "interval": "60",
-            "timezone": "Etc/UTC",
-            "theme": "dark",
-            "style": "1",
-            "locale": "en"
-        });
-    });
-}
+// AUTO REFRESH
+setInterval(loadData, 5000);
+loadData();
 </script>
 
 </body>
