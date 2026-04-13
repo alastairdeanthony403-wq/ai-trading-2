@@ -146,9 +146,7 @@ function saveConfig() {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({
-            "symbol": symbol.includes("USDT") 
-    ? "BINANCE:" + symbol 
-    : "NASDAQ:" + symbol
+            symbols: symbols,
             risk_reward: rr
         })
     });
