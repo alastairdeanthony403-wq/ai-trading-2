@@ -123,6 +123,7 @@ def generate_signal(df):
 
     score = 0
 
+    # NORMAL LOGIC
     if sma20 > sma50:
         score += 2
     elif sma20 < sma50:
@@ -138,21 +139,19 @@ def generate_signal(df):
     else:
         score -= 1
 
-    if score >= 4:
+    # 🚀 FORCE DEMO MODE (OVERRIDE)
+    if score >= 0:
         signal = "BUY"
-    elif score <= -4:
-        signal = "SELL"
+        score = 4   # force strong signal
     else:
-        signal = "HOLD"
-
-    confidence = min(100, abs(score) * 20)
+        signal = "SELL"
+        score = -4  # force strong signal
 
     return {
         "signal": signal,
         "price": round(price, 2),
         "rsi": round(rsi, 1),
-        "score": score,
-        "confidence": confidence
+        "score": score
     }
 
 # ---------------- ROUTES ----------------
