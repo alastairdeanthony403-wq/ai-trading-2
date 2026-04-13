@@ -224,6 +224,7 @@ def signal():
     if abs(sig["score"]) >= 4:
         results.append(result)
 
+         except Exception as e:
         print(f"🔥 {symbol}: {sig['signal']} | Score: {sig['score']}")
 
         # 🚨 HIGH CONFIDENCE ALERT
