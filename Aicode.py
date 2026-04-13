@@ -21,16 +21,16 @@ last_signal = None
 
 # ---------------- TELEGRAM ----------------
 def send_telegram(msg):
-TOKEN = "YOUR_BOT_TOKEN"
-CHAT_ID = "YOUR_CHAT_ID"
+    TOKEN = "YOUR_BOT_TOKEN"
+    CHAT_ID = "YOUR_CHAT_ID"
 
-url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
 
 try:
-requests.post(url, data={
-"chat_id": CHAT_ID,
-"text": msg
-})
+  requests.post(url, data={
+        "chat_id": CHAT_ID,
+        "text": msg
+    })
 except Exception as e:
 print(f"❌ Telegram error: {e}")
 
