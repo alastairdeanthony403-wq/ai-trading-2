@@ -196,11 +196,11 @@ def signal():
             continue
 
     try:
-    df = add_indicators(df)
-    sig = generate_signal(df)
+        df = add_indicators(df)
+        sig = generate_signal(df)
 
-    price = sig["price"]
-    rr = bot_config["risk_reward"]
+        price = sig["price"]
+        rr = bot_config["risk_reward"]
 
     if sig["signal"] == "BUY":
         sl = round(price * 0.98, 2)
