@@ -214,8 +214,7 @@ def signal():
                 "score": sig["score"]
             }
 
-            if abs(sig["score"]) >= 2:
-                results.append(result)
+           results.append(result)
                 print(f"🔥 {symbol}: {sig['signal']} | Score: {sig['score']}")
 
                 # 🚨 ALERT
