@@ -1,48 +1,157 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>AI Trader</title>
+    <title>AI Trading Dashboard</title>
+
+    <style>
+        body {
+            font-family: Arial;
+            background: #0f172a;
+            color: white;
+            text-align: center;
+        }
+
+        h1 {
+            margin-top: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: auto;
+        }
+
+        input, button {
+            padding: 10px;
+            margin: 5px;
+            border-radius: 6px;
+            border: none;
+        }
+
+        button {
+            background: #22c55e;
+            color: white;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #16a34a;
+        }
+
+        .card {
+            background: #1e293b;
+            padding: 15px;
+            margin: 10px;
+            border-radius: 10px;
+        }
+
+        .buy {
+            color: #22c55e;
+            font-weight: bold;
+        }
+
+        .sell {
+            color: #ef4444;
+            font-weight: bold;
+        }
+
+        .hold {
+            color: #facc15;
+        }
+    </style>
 </head>
+
 <body>
 
-<h1>AI Trading Dashboard</h1>
+<div class="container">
 
-<label>Symbol:</label>
-<input id="symbol" value="AAPL"><br><br>
+    <h1>🚀 AI Trading Dashboard</h1>
 
-<label>Risk/Reward:</label>
-<input id="rr" value="2"><br><br>
+    <!-- INPUT -->
+    <div class="card">
+        <input id="symbols" value="BTCUSDT,ETHUSDT,AAPL,TSLA">
+        <input id="rr" value="2">
+        <button onclick="saveConfig()">Save</button>
+    </div>
 
-<button onclick="save()">Save Settings</button>
+    <!-- BEST TRADE -->
+    <h2>🔥 Best Trade</h2>
+    <div id="best"></div>
 
-<h2>Signal</h2>
-<pre id="output">Waiting...</pre>
+    <!-- ALL SIGNALS -->
+    <h2>📊 All Signals</h2>
+    <div id="signals"></div>
+
+</div>
 
 <script>
-function save() {
-    fetch('/config', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-            symbol: document.getElementById('symbol').value,
-            risk_reward: document.getElementById('rr').value
-        })
+const API = "/signal";
+
+function getColor(signal) {
+    if (signal === "BUY") return "buy";
+    if (signal === "SELL") return "sell";
+    return "hold";
+}
+
+function loadData() {
+    fetch(API)
+    .then(res => res.json())
+    .then(data => {
+
+        // BEST TRADE
+        if (data.best_trade) {
+            const b = data.best_trade;
+            document.getElementById("best").innerHTML = `
+                <div class="card">
+                    <h3>${b.symbol}</h3>
+                    <p class="${getColor(b.signal)}">${b.signal}</p>
+                    <p>Price: ${b.price}</p>
+                    <p>SL: ${b.stop_loss}</p>
+                    <p>TP: ${b.take_profit}</p>
+                    <p>Score: ${b.score}</p>
+                </div>
+            `;
+        }
+
+        // ALL SIGNALS
+        let html = "";
+        data.all_signals.forEach(s => {
+            html += `
+                <div class="card">
+                    <h3>${s.symbol}</h3>
+                    <p class="${getColor(s.signal)}">${s.signal}</p>
+                    <p>Price: ${s.price}</p>
+                    <p>SL: ${s.stop_loss}</p>
+                    <p>TP: ${s.take_profit}</p>
+                    <p>Score: ${s.score}</p>
+                </div>
+            `;
+        });
+
+        document.getElementById("signals").innerHTML = html;
+
     });
 }
 
-async function update() {
-    const res = await fetch('/signal');
-    const data = await res.json();
+function saveConfig() {
+    const symbols = document.getElementById("symbols").value.split(",");
+    const rr = document.getElementById("rr").value;
 
-    document.getElementById("output").innerText =
-        JSON.stringify(data, null, 2);
+    fetch("/symbols", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+            symbols: symbols,
+            risk_reward: rr
+        })
+    });
 
-    if (data.signal === "BUY" || data.signal === "SELL") {
-        alert(`🚨 ${data.signal} SIGNAL`);
-    }
+    loadData();
 }
 
-setInterval(update, 10000);
+// AUTO REFRESH
+setInterval(loadData, 5000);
+loadData();
+
 </script>
 
 </body>
