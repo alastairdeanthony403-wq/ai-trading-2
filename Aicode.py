@@ -214,8 +214,9 @@ def signal():
                 "score": sig["score"]
             }
 
-           results.append(result)
-                print(f"🔥 {symbol}: {sig['signal']} | Score: {sig['score']}")
+            results.append(result)
+            
+            print(f"🔥 {symbol}: {sig['signal']} | Score: {sig['score']}")
 
                 # 🚨 ALERT
                 key = f"{symbol}_{sig['signal']}"
