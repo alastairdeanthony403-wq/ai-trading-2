@@ -57,6 +57,7 @@
         .hold {
             color: #facc15;
         }
+        <script src="https://s3.tradingview.com/tv.js"></script>
     </style>
 </head>
 
@@ -80,6 +81,7 @@
     <!-- ALL SIGNALS -->
     <h2>📊 All Signals</h2>
     <div id="signals"></div>
+    <div id="charts"></div>
 
 </div>
 
@@ -140,7 +142,9 @@ function saveConfig() {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({
-            symbols: symbols,
+            "symbol": symbol.includes("USDT") 
+    ? "BINANCE:" + symbol 
+    : "NASDAQ:" + symbol
             risk_reward: rr
         })
     });
@@ -151,7 +155,36 @@ function saveConfig() {
 // AUTO REFRESH
 setInterval(loadData, 5000);
 loadData();
+    const symbols = data.all_signals.map(s => s.symbol);
+loadCharts(symbols);
+function loadCharts(symbols) {
+    let html = "";
 
+    symbols.forEach(symbol => {
+        html += `
+        <div class="card">
+            <h3>${symbol} Chart</h3>
+            <div id="tv_${symbol}" style="height:400px;"></div>
+        </div>
+        `;
+    });
+
+    document.getElementById("charts").innerHTML = html;
+
+    symbols.forEach(symbol => {
+        new TradingView.widget({
+            "container_id": `tv_${symbol}`,
+            "width": "100%",
+            "height": 400,
+            "symbol": symbol.replace("USDT", "USDT"), 
+            "interval": "60",
+            "timezone": "Etc/UTC",
+            "theme": "dark",
+            "style": "1",
+            "locale": "en"
+        });
+    });
+}
 </script>
 
 </body>
