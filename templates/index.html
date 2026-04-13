@@ -99,44 +99,43 @@ function loadData() {
     .then(res => res.json())
     .then(data => {
 
-        // BEST TRADE
-        if (data.best_trade) {
-            const b = data.best_trade;
-            document.getElementById("best").innerHTML = `
-                <div class="card">
-                    <h3>${b.symbol}</h3>
-                    <p class="${getColor(b.signal)}">${b.signal}</p>
-                    <p>Price: ${b.price}</p>
-                    <p>SL: ${b.stop_loss}</p>
-                    <p>TP: ${b.take_profit}</p>
-                    <p>Score: ${b.score}</p>
-                </div>
-            `;
-        }
+    // BEST TRADE
+    if (data.best_trade) {
+        const b = data.best_trade;
+        document.getElementById("best").innerHTML = `
+            <div class="card">
+                <h3>${b.symbol}</h3>
+                <p class="${getColor(b.signal)}">${b.signal}</p>
+                <p>Price: ${b.price}</p>
+                <p>SL: ${b.stop_loss}</p>
+                <p>TP: ${b.take_profit}</p>
+                <p>Score: ${b.score}</p>
+            </div>
+        `;
+    }
 
-        // ALL SIGNALS
-        let html = "";
-        data.all_signals.forEach(s => {
-            html += `
-                <div class="card">
-                    <h3>${s.symbol}</h3>
-                    <p class="${getColor(s.signal)}">${s.signal}</p>
-                    <p>Price: ${s.price}</p>
-                    <p>SL: ${s.stop_loss}</p>
-                    <p>TP: ${s.take_profit}</p>
-                    <p>Score: ${s.score}</p>
-                </div>
-            `;
-        });
-
-        document.getElementById("signals").innerHTML = html;
-
-// 👇 ADD THIS
-const symbols = data.all_signals.map(s => s.symbol);
-loadCharts(symbols);
-
+    // ALL SIGNALS
+    let html = "";
+    data.all_signals.forEach(s => {
+        html += `
+            <div class="card">
+                <h3>${s.symbol}</h3>
+                <p class="${getColor(s.signal)}">${s.signal}</p>
+                <p>Price: ${s.price}</p>
+                <p>SL: ${s.stop_loss}</p>
+                <p>TP: ${s.take_profit}</p>
+                <p>Score: ${s.score}</p>
+            </div>
+        `;
     });
-}
+
+    document.getElementById("signals").innerHTML = html;
+
+    // ✅ MUST BE INSIDE HERE
+    const symbols = data.all_signals.map(s => s.symbol);
+    loadCharts(symbols);
+
+})
 
 function saveConfig() {
     const symbols = document.getElementById("symbols").value.split(",");
