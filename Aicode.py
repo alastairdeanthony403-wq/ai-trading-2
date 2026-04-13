@@ -203,26 +203,26 @@ price = sig["price"]
 rr = bot_config["risk_reward"]
 
 if sig["signal"] == "BUY":
-sl = round(price * 0.98, 2)
-tp = round(price + (price - sl) * rr, 2)
+    sl = round(price * 0.98, 2)
+    tp = round(price + (price - sl) * rr, 2)
 elif sig["signal"] == "SELL":
-sl = round(price * 1.02, 2)
-tp = round(price - (sl - price) * rr, 2)
+    sl = round(price * 1.02, 2)
+    tp = round(price - (sl - price) * rr, 2)
 else:
-sl, tp = None, None
+    sl, tp = None, None
 
 result = {
-"symbol": symbol,
-"signal": sig["signal"],
-"price": price,
-"stop_loss": sl,
-"take_profit": tp,
-"score": sig["score"]
+    "symbol": symbol,
+    "signal": sig["signal"],
+    "price": price,
+    "stop_loss": sl,
+    "take_profit": tp,
+    "score": sig["score"]
 }
 
 if abs(sig["score"]) >= 4:
-results.append(result)
-print(f"🔥 {symbol}: {sig['signal']} | Score: {sig['score']}")
+    results.append(result)
+    print(f"🔥 {symbol}: {sig['signal']} | Score: {sig['score']}")
 
 except Exception as e:
 print(f"❌ Error with {symbol}: {e}")
