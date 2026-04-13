@@ -145,13 +145,15 @@ def generate_signal(df):
     else:
         signal = "HOLD"
 
-    return {
-        "signal": signal,
-        "price": round(price, 2),
-        "rsi": round(rsi, 1),
-        "score": score
-    }
+    confidence = min(100, abs(score) * 20)
 
+return {
+    "signal": signal,
+    "price": round(price, 2),
+    "rsi": round(rsi, 1),
+    "score": score,
+    "confidence": confidence
+}
 
 # ---------------- ROUTES ----------------
 
