@@ -235,11 +235,14 @@ TP: {tp}
         except Exception as e:
             print(f"❌ Error with {symbol}: {e}")
 
-  if not results:
-    return jsonify({
-        "best_trade": None,
-        "all_signals": []
-    })
+    # AFTER your for loop
+
+    if not results:
+        return jsonify({
+            "best_trade": None,
+            "all_signals": []
+        })
+
     best = sorted(results, key=lambda x: abs(x["score"]), reverse=True)[0]
 
     return jsonify({
