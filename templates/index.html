@@ -86,6 +86,13 @@ function loadData() {
     .then(data => {
 
         // BEST TRADE
+       if (!data.best_trade) {
+    document.getElementById("best").innerHTML = `
+        <div class="card">
+            <p>No strong trades right now</p>
+        </div>
+    `;
+}
         if (data.best_trade) {
             const b = data.best_trade;
             document.getElementById("best").innerHTML = `
