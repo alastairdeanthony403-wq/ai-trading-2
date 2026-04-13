@@ -202,6 +202,7 @@ def signal():
         price = sig["price"]
         rr = bot_config["risk_reward"]
 
+    try:
     if sig["signal"] == "BUY":
         sl = round(price * 0.98, 2)
         tp = round(price + (price - sl) * rr, 2)
@@ -224,8 +225,10 @@ def signal():
     if abs(sig["score"]) >= 4:
         results.append(result)
 
-         except Exception as e:
         print(f"🔥 {symbol}: {sig['signal']} | Score: {sig['score']}")
+
+except Exception as e:
+    print(f"❌ Error with {symbol}: {e}")
 
         # 🚨 HIGH CONFIDENCE ALERT
         if sig["signal"] in ["BUY", "SELL"]:
