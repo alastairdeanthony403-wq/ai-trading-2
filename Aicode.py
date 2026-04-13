@@ -203,7 +203,7 @@ def signal():
         rr = bot_config["risk_reward"]
 
    try:
-    if sig["signal"] == "BUY":
+        if sig["signal"] == "BUY":
         sl = round(price * 0.98, 2)
         tp = round(price + (price - sl) * rr, 2)
     elif sig["signal"] == "SELL":
