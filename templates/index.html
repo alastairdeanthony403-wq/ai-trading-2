@@ -155,6 +155,36 @@ function saveConfig() {
 // AUTO REFRESH
 setInterval(loadData, 5000);
 loadData();
+    function loadCharts(symbols) {
+    let html = "";
+
+    symbols.forEach(symbol => {
+        html += `
+        <div class="card">
+            <h3>${symbol} Chart</h3>
+            <div id="tv_${symbol}" style="height:400px;"></div>
+        </div>
+        `;
+    });
+
+    document.getElementById("charts").innerHTML = html;
+
+    symbols.forEach(symbol => {
+        new TradingView.widget({
+            "container_id": `tv_${symbol}`,
+            "width": "100%",
+            "height": 400,
+            "symbol": symbol.includes("USDT") 
+                ? "BINANCE:" + symbol 
+                : "NASDAQ:" + symbol,
+            "interval": "60",
+            "timezone": "Etc/UTC",
+            "theme": "dark",
+            "style": "1",
+            "locale": "en"
+        });
+    });
+}
     const symbols = data.all_signals.map(s => s.symbol);
 loadCharts(symbols);
 function loadCharts(symbols) {
