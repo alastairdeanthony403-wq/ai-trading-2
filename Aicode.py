@@ -219,8 +219,8 @@ def signal():
             print(f"🔥 {symbol}: {sig['signal']} | Score: {sig['score']}")
 
                 # 🚨 ALERT
-                key = f"{symbol}_{sig['signal']}"
-                if key != last_signal and sig["signal"] in ["BUY", "SELL"]:
+            key = f"{symbol}_{sig['signal']}"
+            if key != last_signal and sig["signal"] in ["BUY", "SELL"]:
                     send_telegram(f"""
 🚨 TRADE SIGNAL 🚨
 
