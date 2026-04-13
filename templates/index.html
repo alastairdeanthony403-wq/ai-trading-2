@@ -80,6 +80,11 @@ function getColor(signal) {
     return "hold";
 }
 
+ function getConfidenceColor(conf) {
+    if (conf >= 80) return "#22c55e"; // green
+    if (conf >= 50) return "#facc15"; // yellow
+    return "#ef4444"; // red
+}
 function loadData() {
     fetch(API)
     .then(res => res.json())
