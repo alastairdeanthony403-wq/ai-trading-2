@@ -37,20 +37,19 @@
 
         .bottom {
             height: 45vh;
-            overflow-y: auto;
             padding: 10px;
+            overflow-y: auto;
         }
 
         .card {
             background: #1e293b;
-            padding: 12px;
+            padding: 10px;
             margin: 8px;
             border-radius: 10px;
         }
 
         .buy { color: #22c55e; }
         .sell { color: #ef4444; }
-        .hold { color: #facc15; }
 
         .bar {
             height: 6px;
@@ -61,25 +60,9 @@
         }
 
         .fill { height: 100%; }
+
         .green { background: #22c55e; }
         .red { background: #ef4444; }
-
-        .confidence-bar {
-            height: 6px;
-            background: #111;
-            border-radius: 5px;
-            margin-top: 5px;
-        }
-
-        .confidence-fill {
-            height: 100%;
-            background: #3b82f6;
-            animation: grow 1s ease-out;
-        }
-
-        @keyframes grow {
-            from { width: 0%; }
-        }
 
         .blink {
             animation: blink 1s infinite;
@@ -89,21 +72,27 @@
             50% { opacity: 0.3; }
         }
 
-        .controls {
-            text-align: center;
-            margin-bottom: 10px;
-        }
-
         input, button {
-            padding: 8px;
-            margin: 4px;
-            border-radius: 6px;
+            padding: 6px;
+            margin: 3px;
+            border-radius: 5px;
             border: none;
         }
 
         button {
             background: #22c55e;
             color: white;
+        }
+
+        table {
+            width: 100%;
+            font-size: 12px;
+            border-collapse: collapse;
+        }
+
+        td {
+            padding: 4px;
+            border-bottom: 1px solid #222;
         }
     </style>
 </head>
@@ -112,32 +101,32 @@
 
 <h1>🚀 AI Trading Terminal</h1>
 
-<div class="controls">
+<div style="text-align:center;">
     <input id="symbols" value="BTCUSDT,ETHUSDT,AAPL">
     <input id="rr" value="2">
-    <input id="risk" value="1">
+    <input id="risk" value="1"> <!-- % risk -->
     <button onclick="saveConfig()">Save</button>
 </div>
 
+<!-- ===== ACCOUNT ===== -->
 <div class="top-bar">
     <div>Balance: $<span id="balance">10000</span></div>
-    <div>Total PnL: <span id="totalPnL">0</span></div>
-    <div>Win Rate: <span id="winRate">0%</span></div>
+    <div>Total PnL: $<span id="totalPnL">0</span></div>
+    <div>Trades: <span id="trades">0</span></div>
 </div>
 
 <div class="main">
 
+    <!-- LEFT -->
     <div class="left">
         <h3>📊 Signals</h3>
         <div id="signals"></div>
     </div>
 
+    <!-- RIGHT -->
     <div class="right">
         <h3>🔥 Best Trade</h3>
         <div id="best"></div>
-
-        <h3>📜 Trade History</h3>
-        <div id="history"></div>
     </div>
 
 </div>
@@ -145,162 +134,133 @@
 <div class="bottom">
     <h3>📉 Charts</h3>
     <div id="charts"></div>
+
+    <h3>📜 Trade History</h3>
+    <table id="history"></table>
 </div>
 
 <script>
 const API = "/signal";
 
-let balance = 10000;
-let history = [];
-let chartsLoaded = false;
-let livePrices = {};
-let wsStarted = false;
+let account = {
+    balance: 10000,
+    trades: []
+};
+
+let chartWidgets = {};
 
 function safe(n){ return n ?? 0; }
 
 function getColor(s){
-    return s==="BUY"?"buy":s==="SELL"?"sell":"hold";
+    return s==="BUY"?"buy":"sell";
 }
 
-// ===== REAL-TIME BINANCE PRICES =====
-function startLivePrices(symbols) {
-    const streams = symbols
-        .filter(s => s.includes("USDT"))
-        .map(s => s.toLowerCase() + "@trade")
-        .join("/");
-
-    if (!streams) return;
-
-    const ws = new WebSocket(`wss://stream.binance.com:9443/stream?streams=${streams}`);
-
-    ws.onmessage = (event) => {
-        const msg = JSON.parse(event.data);
-        const data = msg.data;
-
-        const symbol = data.s;
-        const price = parseFloat(data.p);
-
-        livePrices[symbol] = price;
-    };
-}
-
+// ================= LOAD DATA =================
 function loadData(){
     fetch(API)
     .then(r=>r.json())
     .then(data=>{
 
-        let totalPnL = 0;
-        let wins = 0;
-
-        // START WEBSOCKET ONCE
-        if (!wsStarted) {
-            startLivePrices(document.getElementById("symbols").value.split(","));
-            wsStarted = true;
-        }
-
-        // ===== BEST TRADE =====
-        if(data.best_trade){
-            let b = data.best_trade;
-
-            let live = livePrices[b.symbol] || b.live_price;
-
-            let riskPercent = parseFloat(document.getElementById("risk").value);
-            let riskAmount = balance * (riskPercent / 100);
-
-            let stopDistance = Math.abs(b.price - b.stop_loss);
-            let positionSize = stopDistance > 0 ? (riskAmount / stopDistance) : 0;
-
-            document.getElementById("best").innerHTML = `
-                <div class="card">
-                    <h2>${b.symbol}</h2>
-                    <p class="${getColor(b.signal)}">${b.signal}</p>
-
-                    <p>Live: <span class="blink">${safe(live).toFixed(2)}</span></p>
-                    <p>TP: ${b.take_profit}</p>
-                    <p>SL: ${b.stop_loss}</p>
-
-                    <p>Position Size: ${positionSize.toFixed(2)}</p>
-                    <p>Risk: $${riskAmount.toFixed(2)}</p>
-
-                    <div class="confidence-bar">
-                        <div class="confidence-fill" style="width:${safe(b.confidence)}%"></div>
-                    </div>
-                    <p>Confidence: ${safe(b.confidence)}%</p>
-                </div>
-            `;
-
-            history.unshift({
-                symbol: b.symbol,
-                pnl: safe(b.pnl)
-            });
-
-            if(history.length > 10) history.pop();
-        }
-
-        // ===== SIGNALS =====
         let html = "";
+        let totalPnL = 0;
 
         data.all_signals.forEach(s=>{
-            let live = livePrices[s.symbol] || s.live_price;
-            let pnl = safe(s.pnl);
 
+            // ===== POSITION SIZE =====
+            let riskPercent = document.getElementById("risk").value / 100;
+            let riskAmount = account.balance * riskPercent;
+
+            let stopDist = Math.abs(s.price - s.stop_loss);
+            let size = stopDist ? (riskAmount / stopDist).toFixed(2) : 0;
+
+            let pnl = safe(s.pnl);
             totalPnL += pnl;
-            if(pnl > 0) wins++;
+
+            // ===== AUTO TRADE (SIMULATION) =====
+            if(Math.abs(s.score) >= 4){
+                account.trades.push({
+                    symbol: s.symbol,
+                    pnl: pnl
+                });
+
+                account.balance += pnl;
+            }
 
             html += `
             <div class="card">
                 <b>${s.symbol}</b>
                 <p class="${getColor(s.signal)}">${s.signal}</p>
-                <p>Live: <span class="blink">${safe(live).toFixed(2)}</span></p>
+
+                <p>Live: <span class="blink">${safe(s.live_price).toFixed(2)}</span></p>
+                <p>Size: ${size}</p>
+                <p>PnL: ${pnl.toFixed(2)}</p>
 
                 <div class="bar">
                     <div class="fill ${pnl>=0?'green':'red'}"
                          style="width:${Math.min(Math.abs(pnl),100)}%">
                     </div>
                 </div>
-
-                <div class="confidence-bar">
-                    <div class="confidence-fill" style="width:${safe(s.confidence)}%"></div>
-                </div>
-
-                <p>PnL: ${pnl.toFixed(2)}</p>
-            </div>
-            `;
+            </div>`;
         });
 
         document.getElementById("signals").innerHTML = html;
 
-        // ===== STATS =====
-        let trades = data.all_signals.length;
-        let winRate = trades ? ((wins/trades)*100).toFixed(1) : 0;
+        // ===== BEST TRADE =====
+        if(data.best_trade){
+            let b = data.best_trade;
 
+            document.getElementById("best").innerHTML = `
+                <div class="card">
+                    <h2>${b.symbol}</h2>
+                    <p class="${getColor(b.signal)}">${b.signal}</p>
+                    <p>Live: ${safe(b.live_price).toFixed(2)}</p>
+                </div>`;
+        }
+
+        // ===== ACCOUNT STATS =====
+        document.getElementById("balance").innerText = account.balance.toFixed(2);
         document.getElementById("totalPnL").innerText = totalPnL.toFixed(2);
-        document.getElementById("winRate").innerText = winRate + "%";
-
-        balance += totalPnL;
-        document.getElementById("balance").innerText = balance.toFixed(2);
+        document.getElementById("trades").innerText = account.trades.length;
 
         // ===== HISTORY =====
-        let h = "";
-        history.forEach(t=>{
-            h += `<div class="card">${t.symbol} | PnL: ${t.pnl}</div>`;
+        let hist = "";
+        account.trades.slice(-10).reverse().forEach(t=>{
+            hist += `<tr>
+                <td>${t.symbol}</td>
+                <td class="${t.pnl>=0?'buy':'sell'}">${t.pnl.toFixed(2)}</td>
+            </tr>`;
         });
 
-        document.getElementById("history").innerHTML = h;
+        document.getElementById("history").innerHTML = hist;
 
-        // ===== LOAD CHARTS ONCE =====
-        if (!chartsLoaded) {
-            loadCharts(document.getElementById("symbols").value.split(","));
-            chartsLoaded = true;
-        }
+        // ===== CHARTS (NO RELOAD) =====
+        loadCharts(document.getElementById("symbols").value.split(","));
     });
 }
 
-function saveConfig(){
-    chartsLoaded = false;
-    wsStarted = false;
-    livePrices = {};
+// ================= CHARTS =================
+function loadCharts(symbols){
 
+    symbols.forEach(s=>{
+        if(chartWidgets[s]) return;
+
+        let div = document.createElement("div");
+        div.className = "card";
+        div.innerHTML = `<div id="tv_${s}" style="height:300px;"></div>`;
+        document.getElementById("charts").appendChild(div);
+
+        chartWidgets[s] = new TradingView.widget({
+            container_id:`tv_${s}`,
+            width:"100%",
+            height:300,
+            symbol:s.includes("USDT")?"BINANCE:"+s:"NASDAQ:"+s,
+            theme:"dark"
+        });
+    });
+}
+
+// ================= CONFIG =================
+function saveConfig(){
     fetch("/symbols",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
@@ -309,36 +269,10 @@ function saveConfig(){
             risk_reward: document.getElementById("rr").value
         })
     });
-
-    loadData();
 }
 
-function loadCharts(symbols){
-    let html="";
-
-    symbols.forEach(s=>{
-        html+=`
-        <div class="card">
-            <div id="tv_${s}" style="height:300px;"></div>
-        </div>`;
-    });
-
-    document.getElementById("charts").innerHTML=html;
-
-    setTimeout(()=>{
-        symbols.forEach(s=>{
-            new TradingView.widget({
-                container_id:`tv_${s}`,
-                width:"100%",
-                height:300,
-                symbol:s.includes("USDT")?"BINANCE:"+s:"NASDAQ:"+s,
-                theme:"dark"
-            });
-        });
-    },500);
-}
-
-setInterval(loadData,5000);
+// ================= LOOP =================
+setInterval(loadData, 5000);
 loadData();
 </script>
 
