@@ -205,6 +205,13 @@ def signal():
             else:
                 sl, tp = None, None
 
+            pnl = 0
+
+            if sig["signal"] == "BUY":
+                pnl = round((df.iloc[-1]["close"] - price), 2)
+            elif sig["signal"] == "SELL":
+                pnl = round((price - df.iloc[-1]["close"]), 2)
+                
             result = {
                 "symbol": symbol,
                 "signal": sig["signal"],
