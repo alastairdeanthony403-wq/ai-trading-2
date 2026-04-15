@@ -1,5 +1,6 @@
 # ============================================================
-# AI Trading Web App (REAL TRADING READY BACKEND)
+# AI Trading Web App (SMART MONEY PRO MAX VERSION)
+# Includes: BOS + Liquidity + Candle Theory + OB + FVG + MTF
 # ============================================================
 
 from flask import Flask, render_template, request, jsonify
@@ -19,56 +20,11 @@ bot_config = {
 last_signal = None
 
 
-# ---------------- TELEGRAM ----------------
-def send_telegram(msg):
-    TOKEN = "YOUR_BOT_TOKEN"
-    CHAT_ID = "YOUR_CHAT_ID"
-
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-
-    try:
-        requests.post(url, data={
-            "chat_id": CHAT_ID,
-            "text": msg
-        })
-    except Exception as e:
-        print(f"❌ Telegram error: {e}")
-
-
 # ---------------- DATA FETCH ----------------
-
-def fetch_yahoo(symbol: str):
+def fetch_binance(symbol, interval="1h"):
     try:
-        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range=1mo&interval=1h"
-        headers = {"User-Agent": "Mozilla/5.0"}
-
-        r = requests.get(url, headers=headers)
-        data = r.json()["chart"]["result"][0]
-
-        ts = data["timestamp"]
-        q = data["indicators"]["quote"][0]
-
-        df = pd.DataFrame({
-            "date": pd.to_datetime(ts, unit="s"),
-            "open": q["open"],
-            "high": q["high"],
-            "low": q["low"],
-            "close": q["close"],
-            "volume": q["volume"]
-        }).dropna()
-
-        return df
-
-    except Exception as e:
-        print(f"❌ Yahoo error for {symbol}: {e}")
-        return None
-
-
-def fetch_binance(symbol: str):
-    try:
-        url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval=1h&limit=200"
-        r = requests.get(url)
-        data = r.json()
+        url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit=200"
+        data = requests.get(url).json()
 
         df = pd.DataFrame(data, columns=[
             "time", "open", "high", "low", "close", "volume",
@@ -76,70 +32,160 @@ def fetch_binance(symbol: str):
         ])
 
         df["date"] = pd.to_datetime(df["time"], unit="ms")
-        df["open"] = df["open"].astype(float)
-        df["high"] = df["high"].astype(float)
-        df["low"] = df["low"].astype(float)
-        df["close"] = df["close"].astype(float)
-        df["volume"] = df["volume"].astype(float)
+        df[["open","high","low","close","volume"]] = df[
+            ["open","high","low","close","volume"]
+        ].astype(float)
 
-        return df[["date", "open", "high", "low", "close", "volume"]]
+        return df[["date","open","high","low","close","volume"]]
 
     except Exception as e:
-        print(f"❌ Binance error for {symbol}: {e}")
+        print(f"❌ Binance error: {e}")
         return None
 
 
-# SMART ROUTER
-def fetch_data(symbol: str):
+def fetch_yahoo(symbol):
+    try:
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range=1mo&interval=1h"
+        r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
+        data = r.json()["chart"]["result"][0]
+
+        df = pd.DataFrame({
+            "date": pd.to_datetime(data["timestamp"], unit="s"),
+            "open": data["indicators"]["quote"][0]["open"],
+            "high": data["indicators"]["quote"][0]["high"],
+            "low": data["indicators"]["quote"][0]["low"],
+            "close": data["indicators"]["quote"][0]["close"],
+            "volume": data["indicators"]["quote"][0]["volume"]
+        }).dropna()
+
+        return df
+
+    except Exception as e:
+        print(f"❌ Yahoo error: {e}")
+        return None
+
+
+def fetch_data(symbol, interval="1h"):
     if "USDT" in symbol:
-        return fetch_binance(symbol)
+        return fetch_binance(symbol, interval)
     else:
         return fetch_yahoo(symbol)
 
 
-# ---------------- INDICATORS ----------------
-def add_indicators(df):
-    df["sma20"] = df["close"].rolling(20).mean()
-    df["sma50"] = df["close"].rolling(50).mean()
+# ---------------- SMART MONEY FUNCTIONS ----------------
 
-    delta = df["close"].diff()
-    gain = delta.clip(lower=0).rolling(14).mean()
-    loss = (-delta.clip(upper=0)).rolling(14).mean()
-    df["rsi"] = 100 - (100 / (1 + gain / loss))
+# 🔥 ORDER BLOCK DETECTION
+def detect_order_block(df):
+    for i in range(len(df)-3, 0, -1):
+        candle = df.iloc[i]
+        next_candle = df.iloc[i+1]
 
-    return df.dropna()
+        # Bullish OB (last down candle before up move)
+        if candle["close"] < candle["open"] and next_candle["close"] > next_candle["open"]:
+            return ("BUY", candle["low"])
+
+        # Bearish OB
+        if candle["close"] > candle["open"] and next_candle["close"] < next_candle["open"]:
+            return ("SELL", candle["high"])
+
+    return (None, None)
 
 
-# ---------------- SIGNAL ----------------
-def generate_signal(df):
+# 🔥 FAIR VALUE GAP (FVG)
+def detect_fvg(df):
+    for i in range(2, len(df)):
+        c1 = df.iloc[i-2]
+        c2 = df.iloc[i-1]
+        c3 = df.iloc[i]
+
+        # Bullish gap
+        if c1["high"] < c3["low"]:
+            return ("BUY", c1["high"], c3["low"])
+
+        # Bearish gap
+        if c1["low"] > c3["high"]:
+            return ("SELL", c3["high"], c1["low"])
+
+    return (None, None, None)
+
+
+# 🔥 MULTI TIMEFRAME BIAS
+def get_htf_bias(symbol):
+    df_htf = fetch_data(symbol, interval="4h")
+
+    if df_htf is None or len(df_htf) < 50:
+        return 0
+
+    recent_high = df_htf["high"].tail(20).max()
+    recent_low = df_htf["low"].tail(20).min()
+    price = df_htf.iloc[-1]["close"]
+
+    mid = (recent_high + recent_low) / 2
+
+    if price > mid:
+        return -1  # premium → sell bias
+    else:
+        return 1   # discount → buy bias
+
+
+# ---------------- MAIN SIGNAL ----------------
+def generate_signal(df, symbol):
     latest = df.iloc[-1]
+    prev = df.iloc[-2]
 
     price = latest["close"]
-    sma20 = latest["sma20"]
-    sma50 = latest["sma50"]
-    rsi = latest["rsi"]
+
+    body = abs(latest["close"] - latest["open"])
+    rng = latest["high"] - latest["low"]
+
+    upper_wick = latest["high"] - max(latest["open"], latest["close"])
+    lower_wick = min(latest["open"], latest["close"]) - latest["low"]
 
     score = 0
 
-    # REAL LOGIC (no fake override)
-    if sma20 > sma50:
+    # 🔥 BOS
+    if latest["close"] > prev["high"]:
         score += 2
-    else:
+    elif latest["close"] < prev["low"]:
         score -= 2
 
-    if rsi < 30:
-        score += 2
-    elif rsi > 70:
+    # 🔥 Liquidity sweep
+    if latest["high"] > prev["high"] and latest["close"] < prev["high"]:
         score -= 2
+    if latest["low"] < prev["low"] and latest["close"] > prev["low"]:
+        score += 2
 
-    if price > sma20:
+    # 🔥 Candle strength
+    if body > rng * 0.6:
+        score += 2 if latest["close"] > latest["open"] else -2
+
+    # 🔥 Wicks
+    if lower_wick > body:
         score += 1
-    else:
+    if upper_wick > body:
         score -= 1
 
-    if score >= 3:
+    # 🔥 ORDER BLOCK
+    ob_type, ob_level = detect_order_block(df)
+    if ob_type == "BUY" and price <= ob_level * 1.01:
+        score += 2
+    elif ob_type == "SELL" and price >= ob_level * 0.99:
+        score -= 2
+
+    # 🔥 FVG
+    fvg_type, fvg_low, fvg_high = detect_fvg(df)
+    if fvg_type == "BUY" and price <= fvg_high:
+        score += 1
+    elif fvg_type == "SELL" and price >= fvg_low:
+        score -= 1
+
+    # 🔥 MULTI TIMEFRAME
+    score += get_htf_bias(symbol)
+
+    # FINAL
+    if score >= 4:
         signal = "BUY"
-    elif score <= -3:
+    elif score <= -4:
         signal = "SELL"
     else:
         signal = "HOLD"
@@ -147,30 +193,18 @@ def generate_signal(df):
     return {
         "signal": signal,
         "price": round(price, 2),
-        "rsi": round(rsi, 1),
         "score": score
     }
 
 
 # ---------------- ROUTES ----------------
-
 @app.route("/")
 def home():
     return render_template("index.html")
 
 
-@app.route("/symbols", methods=["POST"])
-def update_symbols():
-    data = request.json
-    bot_config["symbols"] = data.get("symbols", bot_config["symbols"])
-    bot_config["risk_reward"] = float(data.get("risk_reward", 2))
-    return jsonify({"symbols": bot_config["symbols"]})
-
-
 @app.route("/signal")
 def signal():
-    global last_signal
-
     results = []
 
     for symbol in bot_config["symbols"]:
@@ -180,23 +214,29 @@ def signal():
             continue
 
         try:
-            df = add_indicators(df)
-            sig = generate_signal(df)
+            sig = generate_signal(df, symbol)
 
             price = sig["price"]
             live_price = float(df.iloc[-1]["close"])
             rr = bot_config["risk_reward"]
 
-            if sig["signal"] == "BUY":
-                sl = round(price * 0.98, 2)
-                tp = round(price + (price - sl) * rr, 2)
-            elif sig["signal"] == "SELL":
-                sl = round(price * 1.02, 2)
-                tp = round(price - (sl - price) * rr, 2)
-            else:
-                sl, tp = None, None
+            recent_low = df["low"].tail(10).min()
+            recent_high = df["high"].tail(10).max()
 
-            result = {
+            if sig["signal"] == "BUY":
+                sl = round(recent_low, 2)
+                tp = round(price + (price - sl) * rr, 2)
+                pnl = live_price - price
+
+            elif sig["signal"] == "SELL":
+                sl = round(recent_high, 2)
+                tp = round(price - (sl - price) * rr, 2)
+                pnl = price - live_price
+
+            else:
+                sl, tp, pnl = None, None, 0
+
+            results.append({
                 "symbol": symbol,
                 "signal": sig["signal"],
                 "price": price,
@@ -204,36 +244,15 @@ def signal():
                 "stop_loss": sl,
                 "take_profit": tp,
                 "score": sig["score"],
-                "confidence": min(abs(sig["score"]) * 25, 100)
-            }
-
-            results.append(result)
-
-            # TELEGRAM ALERT
-            if sig["signal"] in ["BUY", "SELL"] and abs(sig["score"]) >= 3:
-                key = f"{symbol}_{sig['signal']}"
-
-                if key != last_signal:
-                    send_telegram(f"""
-🚨 TRADE SIGNAL 🚨
-
-Symbol: {symbol}
-Signal: {sig['signal']}
-Price: {price}
-
-SL: {sl}
-TP: {tp}
-""")
-                    last_signal = key
+                "pnl": round(pnl, 2),
+                "confidence": min(abs(sig["score"]) * 15, 100)
+            })
 
         except Exception as e:
             print(f"❌ Error with {symbol}: {e}")
 
     if not results:
-        return jsonify({
-            "best_trade": None,
-            "all_signals": []
-        })
+        return jsonify({"best_trade": None, "all_signals": []})
 
     best = sorted(results, key=lambda x: abs(x["score"]), reverse=True)[0]
 
