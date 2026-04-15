@@ -1,5 +1,5 @@
 # ============================================================
-# AI Trading Web App (BINANCE + YAHOO CLEAN FINAL)
+# AI Trading Web App (REAL TRADING READY BACKEND)
 # ============================================================
 
 from flask import Flask, render_template, request, jsonify
@@ -37,7 +37,6 @@ def send_telegram(msg):
 
 # ---------------- DATA FETCH ----------------
 
-# ✅ Yahoo (stocks, forex, indices)
 def fetch_yahoo(symbol: str):
     try:
         url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range=1mo&interval=1h"
@@ -65,7 +64,6 @@ def fetch_yahoo(symbol: str):
         return None
 
 
-# ✅ Binance (crypto)
 def fetch_binance(symbol: str):
     try:
         url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval=1h&limit=200"
@@ -91,7 +89,7 @@ def fetch_binance(symbol: str):
         return None
 
 
-# 🔥 SMART ROUTER
+# SMART ROUTER
 def fetch_data(symbol: str):
     if "USDT" in symbol:
         return fetch_binance(symbol)
@@ -123,10 +121,10 @@ def generate_signal(df):
 
     score = 0
 
-    # NORMAL LOGIC
+    # REAL LOGIC (no fake override)
     if sma20 > sma50:
         score += 2
-    elif sma20 < sma50:
+    else:
         score -= 2
 
     if rsi < 30:
@@ -139,13 +137,12 @@ def generate_signal(df):
     else:
         score -= 1
 
-    # 🚀 FORCE DEMO MODE (OVERRIDE)
-    if score >= 0:
+    if score >= 3:
         signal = "BUY"
-        score = 4   # force strong signal
-    else:
+    elif score <= -3:
         signal = "SELL"
-        score = -4  # force strong signal
+    else:
+        signal = "HOLD"
 
     return {
         "signal": signal,
@@ -153,6 +150,7 @@ def generate_signal(df):
         "rsi": round(rsi, 1),
         "score": score
     }
+
 
 # ---------------- ROUTES ----------------
 
@@ -167,14 +165,6 @@ def update_symbols():
     bot_config["symbols"] = data.get("symbols", bot_config["symbols"])
     bot_config["risk_reward"] = float(data.get("risk_reward", 2))
     return jsonify({"symbols": bot_config["symbols"]})
-
-
-@app.route("/debug")
-def debug():
-    return jsonify({
-        "symbols": bot_config["symbols"],
-        "last_signal": last_signal
-    })
 
 
 @app.route("/signal")
@@ -194,6 +184,7 @@ def signal():
             sig = generate_signal(df)
 
             price = sig["price"]
+            live_price = float(df.iloc[-1]["close"])
             rr = bot_config["risk_reward"]
 
             if sig["signal"] == "BUY":
@@ -205,32 +196,24 @@ def signal():
             else:
                 sl, tp = None, None
 
-            pnl = 0
-
-            if sig["signal"] == "BUY":
-                pnl = round((df.iloc[-1]["close"] - price), 2)
-            elif sig["signal"] == "SELL":
-                pnl = round((price - df.iloc[-1]["close"]), 2)
-                
             result = {
                 "symbol": symbol,
                 "signal": sig["signal"],
                 "price": price,
-                "live_price": df.iloc[-1]["close"],
+                "live_price": round(live_price, 2),
                 "stop_loss": sl,
                 "take_profit": tp,
                 "score": sig["score"],
-                "pnl": pnl,
-                "confidence": abs(sig["score"]) * 25,
+                "confidence": min(abs(sig["score"]) * 25, 100)
             }
 
             results.append(result)
-            
-            print(f"🔥 {symbol}: {sig['signal']} | Score: {sig['score']}")
 
-                # 🚨 ALERT
-            key = f"{symbol}_{sig['signal']}"
-            if key != last_signal and sig["signal"] in ["BUY", "SELL"]:
+            # TELEGRAM ALERT
+            if sig["signal"] in ["BUY", "SELL"] and abs(sig["score"]) >= 3:
+                key = f"{symbol}_{sig['signal']}"
+
+                if key != last_signal:
                     send_telegram(f"""
 🚨 TRADE SIGNAL 🚨
 
@@ -245,8 +228,6 @@ TP: {tp}
 
         except Exception as e:
             print(f"❌ Error with {symbol}: {e}")
-
-    # AFTER your for loop
 
     if not results:
         return jsonify({
