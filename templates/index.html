@@ -60,10 +60,7 @@
             margin-top: 5px;
         }
 
-        .fill {
-            height: 100%;
-        }
-
+        .fill { height: 100%; }
         .green { background: #22c55e; }
         .red { background: #ef4444; }
 
@@ -155,12 +152,36 @@ const API = "/signal";
 
 let balance = 10000;
 let history = [];
-let chartsLoaded = false; // ✅ FIX
+let chartsLoaded = false;
+let livePrices = {};
+let wsStarted = false;
 
 function safe(n){ return n ?? 0; }
 
 function getColor(s){
     return s==="BUY"?"buy":s==="SELL"?"sell":"hold";
+}
+
+// ===== REAL-TIME BINANCE PRICES =====
+function startLivePrices(symbols) {
+    const streams = symbols
+        .filter(s => s.includes("USDT"))
+        .map(s => s.toLowerCase() + "@trade")
+        .join("/");
+
+    if (!streams) return;
+
+    const ws = new WebSocket(`wss://stream.binance.com:9443/stream?streams=${streams}`);
+
+    ws.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        const data = msg.data;
+
+        const symbol = data.s;
+        const price = parseFloat(data.p);
+
+        livePrices[symbol] = price;
+    };
 }
 
 function loadData(){
@@ -171,9 +192,17 @@ function loadData(){
         let totalPnL = 0;
         let wins = 0;
 
+        // START WEBSOCKET ONCE
+        if (!wsStarted) {
+            startLivePrices(document.getElementById("symbols").value.split(","));
+            wsStarted = true;
+        }
+
         // ===== BEST TRADE =====
         if(data.best_trade){
             let b = data.best_trade;
+
+            let live = livePrices[b.symbol] || b.live_price;
 
             let riskPercent = parseFloat(document.getElementById("risk").value);
             let riskAmount = balance * (riskPercent / 100);
@@ -186,7 +215,7 @@ function loadData(){
                     <h2>${b.symbol}</h2>
                     <p class="${getColor(b.signal)}">${b.signal}</p>
 
-                    <p>Live: <span class="blink">${safe(b.live_price).toFixed(2)}</span></p>
+                    <p>Live: <span class="blink">${safe(live).toFixed(2)}</span></p>
                     <p>TP: ${b.take_profit}</p>
                     <p>SL: ${b.stop_loss}</p>
 
@@ -212,7 +241,9 @@ function loadData(){
         let html = "";
 
         data.all_signals.forEach(s=>{
+            let live = livePrices[s.symbol] || s.live_price;
             let pnl = safe(s.pnl);
+
             totalPnL += pnl;
             if(pnl > 0) wins++;
 
@@ -220,7 +251,7 @@ function loadData(){
             <div class="card">
                 <b>${s.symbol}</b>
                 <p class="${getColor(s.signal)}">${s.signal}</p>
-                <p>Live: <span class="blink">${safe(s.live_price).toFixed(2)}</span></p>
+                <p>Live: <span class="blink">${safe(live).toFixed(2)}</span></p>
 
                 <div class="bar">
                     <div class="fill ${pnl>=0?'green':'red'}"
@@ -252,14 +283,12 @@ function loadData(){
         // ===== HISTORY =====
         let h = "";
         history.forEach(t=>{
-            h += `<div class="card">
-                ${t.symbol} | PnL: ${t.pnl}
-            </div>`;
+            h += `<div class="card">${t.symbol} | PnL: ${t.pnl}</div>`;
         });
 
         document.getElementById("history").innerHTML = h;
 
-        // ✅ ONLY LOAD CHARTS ONCE
+        // ===== LOAD CHARTS ONCE =====
         if (!chartsLoaded) {
             loadCharts(document.getElementById("symbols").value.split(","));
             chartsLoaded = true;
@@ -268,7 +297,9 @@ function loadData(){
 }
 
 function saveConfig(){
-    chartsLoaded = false; // ✅ RESET CHARTS
+    chartsLoaded = false;
+    wsStarted = false;
+    livePrices = {};
 
     fetch("/symbols",{
         method:"POST",
