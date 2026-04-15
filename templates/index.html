@@ -70,6 +70,25 @@
         .green { background: #22c55e; }
         .red { background: #ef4444; }
 
+        /* ===== CONFIDENCE BAR ===== */
+        .conf-bar {
+            height: 8px;
+            background: #111;
+            border-radius: 5px;
+            overflow: hidden;
+            margin-top: 6px;
+        }
+
+        .conf-fill {
+            height: 100%;
+            width: 0%;
+            transition: width 0.8s ease;
+        }
+
+        .conf-green { background: #22c55e; }
+        .conf-yellow { background: #facc15; }
+        .conf-red { background: #ef4444; }
+
         /* ===== BLINK ===== */
         .blink {
             animation: blink 1s infinite;
@@ -119,13 +138,13 @@
 <!-- ===== MAIN GRID ===== -->
 <div class="main">
 
-    <!-- LEFT: ALL SIGNALS -->
+    <!-- LEFT: SIGNALS -->
     <div class="left">
         <h3>📊 Signals</h3>
         <div id="signals"></div>
     </div>
 
-    <!-- RIGHT: BEST TRADE -->
+    <!-- RIGHT: BEST -->
     <div class="right">
         <h3>🔥 Best Trade</h3>
         <div id="best"></div>
@@ -133,7 +152,7 @@
 
 </div>
 
-<!-- ===== BOTTOM: CHARTS ===== -->
+<!-- ===== CHARTS ===== -->
 <div class="bottom">
     <h3>📉 Charts</h3>
     <div id="charts"></div>
@@ -146,6 +165,12 @@ function safe(n){ return n ?? 0; }
 
 function getColor(s){
     return s==="BUY"?"buy":s==="SELL"?"sell":"hold";
+}
+
+function getConfidenceClass(conf){
+    if(conf >= 80) return "conf-green";
+    if(conf >= 50) return "conf-yellow";
+    return "conf-red";
 }
 
 function loadData(){
@@ -164,7 +189,17 @@ function loadData(){
                 <div class="card">
                     <h2>${b.symbol}</h2>
                     <p class="${getColor(b.signal)}">${b.signal}</p>
+
                     <p>Live: <span class="blink">${safe(b.live_price).toFixed(2)}</span></p>
+
+                    <!-- CONFIDENCE -->
+                    <div class="conf-bar">
+                        <div class="conf-fill ${getConfidenceClass(safe(b.confidence))}"
+                             style="width:${safe(b.confidence)}%">
+                        </div>
+                    </div>
+                    <p>Confidence: ${safe(b.confidence)}%</p>
+
                     <p>TP: ${b.take_profit}</p>
                     <p>SL: ${b.stop_loss}</p>
                 </div>
@@ -183,9 +218,20 @@ function loadData(){
             <div class="card">
                 <b>${s.symbol}</b>
                 <p class="${getColor(s.signal)}">${s.signal}</p>
+
                 <p>Live: <span class="blink">${safe(s.live_price).toFixed(2)}</span></p>
+
+                <!-- CONFIDENCE -->
+                <div class="conf-bar">
+                    <div class="conf-fill ${getConfidenceClass(safe(s.confidence))}"
+                         style="width:${safe(s.confidence)}%">
+                    </div>
+                </div>
+                <p>Confidence: ${safe(s.confidence)}%</p>
+
                 <p>PnL: ${pnl.toFixed(2)}</p>
 
+                <!-- PNL BAR -->
                 <div class="bar">
                     <div class="fill ${pnl>=0?'green':'red'}"
                          style="width:${Math.min(Math.abs(pnl),100)}%">
