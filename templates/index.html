@@ -54,32 +54,33 @@
 
         .hold { color: #facc15; }
 
-.profit-bar {
-    height: 10px;
-    border-radius: 5px;
-    margin-top: 8px;
-    background: #111;
-    overflow: hidden;
-}
+        /* ✅ PROFIT BAR */
+        .profit-bar {
+            height: 10px;
+            border-radius: 5px;
+            margin-top: 8px;
+            background: #111;
+            overflow: hidden;
+        }
 
-.profit-fill {
-    height: 100%;
-    transition: width 0.5s;
-}
+        .profit-fill {
+            height: 100%;
+            transition: width 0.5s;
+        }
 
-.green { background: #22c55e; }
-.red { background: #ef4444; }
+        .green { background: #22c55e; }
+        .red { background: #ef4444; }
 
-.blink {
-    animation: blink 1s infinite;
-}
+        /* ✅ BLINK LIVE PRICE */
+        .blink {
+            animation: blink 1s infinite;
+        }
 
-@keyframes blink {
-    0% { opacity: 1; }
-    50% { opacity: 0.3; }
-    100% { opacity: 1; }
-}
-        
+        @keyframes blink {
+            0% { opacity: 1; }
+            50% { opacity: 0.3; }
+            100% { opacity: 1; }
+        }
     </style>
 </head>
 
@@ -124,12 +125,16 @@ function getConfidenceColor(conf) {
     return "#ef4444";
 }
 
+function safe(num) {
+    return num !== undefined && num !== null ? num : 0;
+}
+
 function loadData() {
     fetch(API)
     .then(res => res.json())
     .then(data => {
 
-        // BEST TRADE
+        // ================= BEST TRADE =================
         if (!data.best_trade) {
             document.getElementById("best").innerHTML = `
                 <div class="card">
@@ -138,36 +143,62 @@ function loadData() {
             `;
         } else {
             const b = data.best_trade;
+
             document.getElementById("best").innerHTML = `
                 <div class="card">
                     <h3>${b.symbol}</h3>
                     <p class="${getColor(b.signal)}">${b.signal}</p>
+
                     <p>Price: ${b.price}</p>
-                    <p>Live: ${b.live_price.toFixed(2)}</p>
+                    <p>Live: <span class="blink">${safe(b.live_price).toFixed(2)}</span></p>
+
                     <p>SL: ${b.stop_loss}</p>
                     <p>TP: ${b.take_profit}</p>
-                    <p class="${getPnLColor(b.pnl)}">PnL: ${b.pnl}</p>
-                    <p style="color:${getConfidenceColor(b.confidence)}">
-                        Confidence: ${b.confidence}%
+
+                    <div class="profit-bar">
+                        <div class="profit-fill ${b.pnl >= 0 ? 'green' : 'red'}"
+                             style="width:${Math.min(Math.abs(safe(b.pnl)), 100)}%">
+                        </div>
+                    </div>
+
+                    <p class="${getPnLColor(b.pnl)}">
+                        PnL: ${safe(b.pnl).toFixed(2)}
+                    </p>
+
+                    <p style="color:${getConfidenceColor(safe(b.confidence))}">
+                        Confidence: ${safe(b.confidence)}%
                     </p>
                 </div>
             `;
         }
 
-        // ALL SIGNALS
+        // ================= ALL SIGNALS =================
         let html = "";
+
         data.all_signals.forEach(s => {
             html += `
                 <div class="card">
                     <h3>${s.symbol}</h3>
                     <p class="${getColor(s.signal)}">${s.signal}</p>
+
                     <p>Price: ${s.price}</p>
-                    <p>Live: ${s.live_price.toFixed(2)}</p>
+                    <p>Live: <span class="blink">${safe(s.live_price).toFixed(2)}</span></p>
+
                     <p>SL: ${s.stop_loss}</p>
                     <p>TP: ${s.take_profit}</p>
-                    <p class="${getPnLColor(s.pnl)}">PnL: ${s.pnl}</p>
-                    <p style="color:${getConfidenceColor(s.confidence)}">
-                        Confidence: ${s.confidence}%
+
+                    <div class="profit-bar">
+                        <div class="profit-fill ${s.pnl >= 0 ? 'green' : 'red'}"
+                             style="width:${Math.min(Math.abs(safe(s.pnl)), 100)}%">
+                        </div>
+                    </div>
+
+                    <p class="${getPnLColor(s.pnl)}">
+                        PnL: ${safe(s.pnl).toFixed(2)}
+                    </p>
+
+                    <p style="color:${getConfidenceColor(safe(s.confidence))}">
+                        Confidence: ${safe(s.confidence)}%
                     </p>
                 </div>
             `;
@@ -175,7 +206,7 @@ function loadData() {
 
         document.getElementById("signals").innerHTML = html;
 
-        // ✅ ALWAYS LOAD CHARTS FROM INPUT (NOT signals)
+        // ================= CHARTS =================
         const symbols = document.getElementById("symbols").value.split(",");
         loadCharts(symbols);
     });
