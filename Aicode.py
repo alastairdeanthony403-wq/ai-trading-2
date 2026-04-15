@@ -221,6 +221,7 @@ def signal():
                 "take_profit": tp,
                 "score": sig["score"],
                 "pnl": pnl,
+                "confidence": abs(sig["score"]) * 25,
             }
 
             results.append(result)
