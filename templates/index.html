@@ -2,7 +2,7 @@
 <html>
 <head>
     <title>AI Trading Dashboard</title>
-    <div id="stats" class="card"></div>
+
     <script src="https://s3.tradingview.com/tv.js"></script>
 
     <style>
@@ -54,7 +54,7 @@
 
         .hold { color: #facc15; }
 
-        /* ✅ PROFIT BAR */
+        /* PROFIT BAR */
         .profit-bar {
             height: 10px;
             border-radius: 5px;
@@ -71,7 +71,7 @@
         .green { background: #22c55e; }
         .red { background: #ef4444; }
 
-        /* ✅ BLINK LIVE PRICE */
+        /* BLINK */
         .blink {
             animation: blink 1s infinite;
         }
@@ -80,6 +80,19 @@
             0% { opacity: 1; }
             50% { opacity: 0.3; }
             100% { opacity: 1; }
+        }
+
+        /* STATS PANEL */
+        #stats {
+            text-align: left;
+        }
+
+        #stats h3 {
+            margin-bottom: 10px;
+        }
+
+        #stats p {
+            margin: 4px 0;
         }
     </style>
 </head>
@@ -90,18 +103,25 @@
 
     <h1>🚀 AI Trading Dashboard</h1>
 
+    <!-- ✅ PERFORMANCE STATS -->
+    <div id="stats" class="card"></div>
+
+    <!-- CONFIG -->
     <div class="card">
         <input id="symbols" value="BTCUSDT,ETHUSDT,AAPL,TSLA">
         <input id="rr" value="2">
         <button onclick="saveConfig()">Save</button>
     </div>
 
+    <!-- BEST -->
     <h2>🔥 Best Trade</h2>
     <div id="best"></div>
 
+    <!-- SIGNALS -->
     <h2>📊 All Signals</h2>
     <div id="signals" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:10px;"></div>
 
+    <!-- CHARTS -->
     <div id="charts"></div>
 
 </div>
@@ -205,6 +225,29 @@ function loadData() {
         });
 
         document.getElementById("signals").innerHTML = html;
+
+        // ================= PERFORMANCE =================
+        const totalTrades = data.all_signals.length;
+
+        const wins = data.all_signals.filter(s => safe(s.pnl) > 0).length;
+
+        const winRate = totalTrades
+            ? ((wins / totalTrades) * 100).toFixed(1)
+            : 0;
+
+        const totalPnL = data.all_signals.reduce(
+            (sum, s) => sum + safe(s.pnl),
+            0
+        );
+
+        document.getElementById("stats").innerHTML = `
+            <h3>📊 Performance</h3>
+            <p>Trades: ${totalTrades}</p>
+            <p>Win Rate: ${winRate}%</p>
+            <p class="${getPnLColor(totalPnL)}">
+                Total PnL: ${totalPnL.toFixed(2)}
+            </p>
+        `;
 
         // ================= CHARTS =================
         const symbols = document.getElementById("symbols").value.split(",");
