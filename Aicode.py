@@ -220,6 +220,7 @@ def signal():
                 "stop_loss": sl,
                 "take_profit": tp,
                 "score": sig["score"]
+                "pnl": pnl,
             }
 
             results.append(result)
