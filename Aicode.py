@@ -209,6 +209,7 @@ def signal():
                 "symbol": symbol,
                 "signal": sig["signal"],
                 "price": price,
+                "live_price": df.iloc[-1]["close"],
                 "stop_loss": sl,
                 "take_profit": tp,
                 "score": sig["score"]
