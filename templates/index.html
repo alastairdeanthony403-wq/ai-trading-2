@@ -176,7 +176,7 @@ function loadData() {
 }
 
 function saveConfig() {
-    const symbols = document.getElementById("symbols").value.split(",");
+    const symbols = document.getElementById("symbols").value.split(","); 
     const rr = document.getElementById("rr").value;
 
     fetch("/symbols", {
