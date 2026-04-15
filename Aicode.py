@@ -219,7 +219,7 @@ def signal():
                 "live_price": df.iloc[-1]["close"],
                 "stop_loss": sl,
                 "take_profit": tp,
-                "score": sig["score"]
+                "score": sig["score"],
                 "pnl": pnl,
             }
 
