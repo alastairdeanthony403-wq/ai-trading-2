@@ -188,7 +188,8 @@ function saveConfig() {
         })
     });
 
-    loadData();
+    loadData(const symbols = document.getElementById("symbols").value.split(",");
+loadCharts(symbols););
 }
 
 function loadCharts(symbols) {
@@ -224,7 +225,8 @@ function loadCharts(symbols) {
 
 // AUTO REFRESH
 setInterval(loadData, 5000);
-loadData();
+loadData(const symbols = document.getElementById("symbols").value.split(",");
+loadCharts(symbols););
 </script>
 
 </body>
