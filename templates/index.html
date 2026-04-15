@@ -14,7 +14,7 @@
 
         h1 {
             text-align: center;
-            padding: 15px;
+            padding: 10px;
         }
 
         .top-bar {
@@ -52,7 +52,7 @@
         .sell { color: #ef4444; }
         .hold { color: #facc15; }
 
-        .bar, .confidence-bar {
+        .bar {
             height: 6px;
             background: #111;
             border-radius: 5px;
@@ -62,16 +62,26 @@
 
         .fill {
             height: 100%;
-            transition: width 0.5s ease;
         }
 
         .green { background: #22c55e; }
         .red { background: #ef4444; }
 
+        .confidence-bar {
+            height: 6px;
+            background: #111;
+            border-radius: 5px;
+            margin-top: 5px;
+        }
+
         .confidence-fill {
             height: 100%;
-            background: linear-gradient(90deg,#22c55e,#4ade80);
-            transition: width 0.5s ease;
+            background: #3b82f6;
+            animation: grow 1s ease-out;
+        }
+
+        @keyframes grow {
+            from { width: 0%; }
         }
 
         .blink {
@@ -80,6 +90,11 @@
 
         @keyframes blink {
             50% { opacity: 0.3; }
+        }
+
+        .controls {
+            text-align: center;
+            margin-bottom: 10px;
         }
 
         input, button {
@@ -100,17 +115,17 @@
 
 <h1>🚀 AI Trading Terminal</h1>
 
-<div class="controls" style="text-align:center;">
+<div class="controls">
     <input id="symbols" value="BTCUSDT,ETHUSDT,AAPL">
     <input id="rr" value="2">
+    <input id="risk" value="1"> <!-- ✅ NEW -->
     <button onclick="saveConfig()">Save</button>
 </div>
 
-<!-- ===== ACCOUNT STATS ===== -->
+<!-- ===== ACCOUNT ===== -->
 <div class="top-bar">
     <div>Balance: $<span id="balance">10000</span></div>
     <div>Total PnL: <span id="totalPnL">0</span></div>
-    <div>Trades: <span id="totalTrades">0</span></div>
     <div>Win Rate: <span id="winRate">0%</span></div>
 </div>
 
@@ -141,14 +156,8 @@
 <script>
 const API = "/signal";
 
-// ===== LOCAL STORAGE =====
-let balance = parseFloat(localStorage.getItem("balance")) || 10000;
-let history = JSON.parse(localStorage.getItem("history") || "[]");
-
-function saveStorage() {
-    localStorage.setItem("balance", balance);
-    localStorage.setItem("history", JSON.stringify(history));
-}
+let balance = 10000;
+let history = [];
 
 function safe(n){ return n ?? 0; }
 
@@ -168,23 +177,38 @@ function loadData(){
         if(data.best_trade){
             let b = data.best_trade;
 
+            let riskPercent = parseFloat(document.getElementById("risk").value);
+            let riskAmount = balance * (riskPercent / 100);
+
+            let stopDistance = Math.abs(b.price - b.stop_loss);
+            let positionSize = stopDistance > 0 ? (riskAmount / stopDistance) : 0;
+
             document.getElementById("best").innerHTML = `
                 <div class="card">
                     <h2>${b.symbol}</h2>
                     <p class="${getColor(b.signal)}">${b.signal}</p>
+
                     <p>Live: <span class="blink">${safe(b.live_price).toFixed(2)}</span></p>
+                    <p>TP: ${b.take_profit}</p>
+                    <p>SL: ${b.stop_loss}</p>
+
+                    <p>Position Size: ${positionSize.toFixed(2)}</p>
+                    <p>Risk: $${riskAmount.toFixed(2)}</p>
 
                     <div class="confidence-bar">
                         <div class="confidence-fill" style="width:${safe(b.confidence)}%"></div>
                     </div>
-
                     <p>Confidence: ${safe(b.confidence)}%</p>
-
-                    <button onclick="executeTrade('${b.symbol}', ${b.live_price}, '${b.signal}')">
-                        Execute Trade
-                    </button>
                 </div>
             `;
+
+            // ADD TO HISTORY
+            history.unshift({
+                symbol: b.symbol,
+                pnl: safe(b.pnl)
+            });
+
+            if(history.length > 10) history.pop();
         }
 
         // ===== SIGNALS =====
@@ -201,17 +225,17 @@ function loadData(){
                 <p class="${getColor(s.signal)}">${s.signal}</p>
                 <p>Live: <span class="blink">${safe(s.live_price).toFixed(2)}</span></p>
 
-                <div class="confidence-bar">
-                    <div class="confidence-fill" style="width:${safe(s.confidence)}%"></div>
-                </div>
-
-                <p>PnL: ${pnl.toFixed(2)}</p>
-
                 <div class="bar">
                     <div class="fill ${pnl>=0?'green':'red'}"
                          style="width:${Math.min(Math.abs(pnl),100)}%">
                     </div>
                 </div>
+
+                <div class="confidence-bar">
+                    <div class="confidence-fill" style="width:${safe(s.confidence)}%"></div>
+                </div>
+
+                <p>PnL: ${pnl.toFixed(2)}</p>
             </div>
             `;
         });
@@ -219,58 +243,30 @@ function loadData(){
         document.getElementById("signals").innerHTML = html;
 
         // ===== STATS =====
-        let trades = history.length;
-        let winRate = trades ? ((history.filter(t=>t.pnl>0).length / trades)*100).toFixed(1) : 0;
+        let trades = data.all_signals.length;
+        let winRate = trades ? ((wins/trades)*100).toFixed(1) : 0;
 
-        document.getElementById("balance").innerText = balance.toFixed(2);
         document.getElementById("totalPnL").innerText = totalPnL.toFixed(2);
-        document.getElementById("totalTrades").innerText = trades;
         document.getElementById("winRate").innerText = winRate + "%";
 
-        renderHistory();
+        balance += totalPnL;
+        document.getElementById("balance").innerText = balance.toFixed(2);
 
+        // ===== HISTORY =====
+        let h = "";
+        history.forEach(t=>{
+            h += `<div class="card">
+                ${t.symbol} | PnL: ${t.pnl}
+            </div>`;
+        });
+
+        document.getElementById("history").innerHTML = h;
+
+        // ===== CHARTS =====
         loadCharts(document.getElementById("symbols").value.split(","));
     });
 }
 
-// ===== EXECUTE TRADE =====
-function executeTrade(symbol, price, signal){
-    let pnl = (Math.random() - 0.4) * 100; // simulate result
-
-    balance += pnl;
-
-    history.unshift({
-        symbol,
-        signal,
-        entry: price,
-        pnl: pnl.toFixed(2),
-        time: new Date().toLocaleTimeString()
-    });
-
-    if(history.length > 20) history.pop();
-
-    saveStorage();
-    loadData();
-}
-
-// ===== HISTORY UI =====
-function renderHistory(){
-    let html = "";
-
-    history.forEach(t=>{
-        html += `
-        <div class="card">
-            ${t.symbol} | ${t.signal} <br>
-            PnL: <span class="${t.pnl>=0?'buy':'sell'}">${t.pnl}</span><br>
-            ${t.time}
-        </div>
-        `;
-    });
-
-    document.getElementById("history").innerHTML = html;
-}
-
-// ===== CONFIG =====
 function saveConfig(){
     fetch("/symbols",{
         method:"POST",
@@ -280,10 +276,10 @@ function saveConfig(){
             risk_reward: document.getElementById("rr").value
         })
     });
+
     loadData();
 }
 
-// ===== CHARTS =====
 function loadCharts(symbols){
     let html="";
 
