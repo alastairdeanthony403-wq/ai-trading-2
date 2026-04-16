@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Realtime Feed</title>
+
+    <style>
+        body {
+            background: #0b1220;
+            color: white;
+            font-family: Arial;
+        }
+
+        .card {
+            background: #1e293b;
+            padding: 10px;
+            margin: 10px;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+
+<body>
+
+<h1>⚡ Real-Time Prices</h1>
+
+<div id="feed"></div>
+
+<script>
+const socket = new WebSocket("wss://stream.binance.com:9443/ws/btcusdt@trade");
+
+socket.onmessage = function(event){
+    let data = JSON.parse(event.data);
+
+    document.getElementById("feed").innerHTML = `
+        <div class="card">
+            BTC Price: ${parseFloat(data.p).toFixed(2)}
+        </div>`;
+};
+</script>
+
+</body>
+</html>
