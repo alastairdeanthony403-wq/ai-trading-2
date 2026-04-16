@@ -1,5 +1,5 @@
 # ============================================================
-# AI Trading Engine (REAL TRADE TRACKING VERSION)
+# AI Trading Engine (REAL + DATABASE VERSION)
 # ============================================================
 
 from flask import Flask, render_template, request, jsonify
@@ -7,6 +7,8 @@ from flask_cors import CORS
 import pandas as pd
 import requests
 import uuid
+import sqlite3
+from datetime import datetime
 
 app = Flask(__name__)
 CORS(app)
@@ -18,12 +20,34 @@ bot_config = {
     "risk_percent": 1
 }
 
-# ---------------- ACCOUNT ----------------
-account = {
-    "balance": 10000,
-    "open_trades": [],
-    "trade_history": []
-}
+DB_NAME = "trades.db"
+
+
+# ---------------- DATABASE ----------------
+def init_db():
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS trades (
+        id TEXT,
+        symbol TEXT,
+        type TEXT,
+        entry REAL,
+        sl REAL,
+        tp REAL,
+        size REAL,
+        exit REAL,
+        pnl REAL,
+        status TEXT,
+        time TEXT
+    )
+    """)
+
+    conn.commit()
+    conn.close()
+
+init_db()
 
 
 # ---------------- DATA ----------------
@@ -43,7 +67,7 @@ def fetch_binance(symbol):
     return df
 
 
-# ---------------- SIGNAL (simple for now) ----------------
+# ---------------- SIGNAL ----------------
 def generate_signal(df):
     price = df.iloc[-1]["close"]
     prev = df.iloc[-2]["close"]
@@ -57,8 +81,22 @@ def generate_signal(df):
 
 # ---------------- TRADE ENGINE ----------------
 
+def get_open_trades():
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+
+    c.execute("SELECT * FROM trades WHERE status='OPEN'")
+    rows = c.fetchall()
+
+    conn.close()
+    return rows
+
+
 def open_trade(symbol, signal, price):
-    risk_amount = account["balance"] * (bot_config["risk_percent"] / 100)
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+
+    risk_amount = get_balance() * (bot_config["risk_percent"] / 100)
 
     sl = price * 0.99 if signal == "BUY" else price * 1.01
     tp = price + (price - sl) * bot_config["risk_reward"] if signal == "BUY" else price - (sl - price) * bot_config["risk_reward"]
@@ -66,40 +104,60 @@ def open_trade(symbol, signal, price):
     stop_distance = abs(price - sl)
     size = risk_amount / stop_distance if stop_distance else 0
 
-    trade = {
-        "id": str(uuid.uuid4()),
-        "symbol": symbol,
-        "type": signal,
-        "entry": price,
-        "sl": sl,
-        "tp": tp,
-        "size": size,
-        "status": "OPEN"
-    }
+    trade_id = str(uuid.uuid4())
 
-    account["open_trades"].append(trade)
+    c.execute("""
+    INSERT INTO trades VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, 'OPEN', ?)
+    """, (
+        trade_id, symbol, signal, price, sl, tp, size,
+        datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    ))
+
+    conn.commit()
+    conn.close()
+
+
+def close_trade(trade_id, exit_price, pnl):
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+
+    c.execute("""
+    UPDATE trades
+    SET exit=?, pnl=?, status='CLOSED'
+    WHERE id=?
+    """, (exit_price, pnl, trade_id))
+
+    conn.commit()
+    conn.close()
+
+
+def get_balance():
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+
+    c.execute("SELECT SUM(pnl) FROM trades WHERE status='CLOSED'")
+    total_pnl = c.fetchone()[0] or 0
+
+    conn.close()
+
+    return 10000 + total_pnl
 
 
 def update_trades(symbol, price):
-    for trade in account["open_trades"][:]:
+    open_trades = get_open_trades()
 
-        if trade["symbol"] != symbol:
+    for t in open_trades:
+        trade_id, sym, type_, entry, sl, tp, size, exit_p, pnl_db, status, time = t
+
+        if sym != symbol:
             continue
 
-        pnl = (price - trade["entry"]) * trade["size"] if trade["type"] == "BUY" else (trade["entry"] - price) * trade["size"]
+        pnl = (price - entry) * size if type_ == "BUY" else (entry - price) * size
 
-        # CLOSE CONDITIONS
-        if (trade["type"] == "BUY" and (price <= trade["sl"] or price >= trade["tp"])) or \
-           (trade["type"] == "SELL" and (price >= trade["sl"] or price <= trade["tp"])):
+        if (type_ == "BUY" and (price <= sl or price >= tp)) or \
+           (type_ == "SELL" and (price >= sl or price <= tp)):
 
-            trade["exit"] = price
-            trade["pnl"] = round(pnl, 2)
-            trade["status"] = "CLOSED"
-
-            account["balance"] += trade["pnl"]
-
-            account["trade_history"].append(trade)
-            account["open_trades"].remove(trade)
+            close_trade(trade_id, price, round(pnl, 2))
 
 
 # ---------------- ROUTES ----------------
@@ -114,6 +172,9 @@ def signal():
 
     results = []
 
+    open_trades = get_open_trades()
+    open_symbols = [t[1] for t in open_trades]
+
     for symbol in bot_config["symbols"]:
 
         df = fetch_binance(symbol)
@@ -121,22 +182,24 @@ def signal():
 
         sig = generate_signal(df)
 
-        # UPDATE EXISTING TRADES
+        # UPDATE TRADES
         update_trades(symbol, price)
 
-        # OPEN NEW TRADE (if none open for symbol)
-        if sig in ["BUY", "SELL"] and not any(t["symbol"] == symbol for t in account["open_trades"]):
+        # OPEN NEW TRADE
+        if sig in ["BUY", "SELL"] and symbol not in open_symbols:
             open_trade(symbol, sig, price)
 
         # GET CURRENT PNL
-        open_trade_obj = next((t for t in account["open_trades"] if t["symbol"] == symbol), None)
+        current_trade = next((t for t in get_open_trades() if t[1] == symbol), None)
 
         pnl = 0
-        if open_trade_obj:
-            if open_trade_obj["type"] == "BUY":
-                pnl = (price - open_trade_obj["entry"]) * open_trade_obj["size"]
+        if current_trade:
+            _, _, type_, entry, _, _, size, _, _, _, _ = current_trade
+
+            if type_ == "BUY":
+                pnl = (price - entry) * size
             else:
-                pnl = (open_trade_obj["entry"] - price) * open_trade_obj["size"]
+                pnl = (entry - price) * size
 
         results.append({
             "symbol": symbol,
@@ -151,9 +214,39 @@ def signal():
 
     return jsonify({
         "best_trade": best,
-        "all_signals": results,
-        "balance": account["balance"],
-        "history": account["trade_history"]
+        "all_signals": results
+    })
+
+
+# ---------------- HISTORY ----------------
+@app.route("/history")
+def history():
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+
+    c.execute("SELECT symbol, type, entry, exit, pnl, time FROM trades WHERE status='CLOSED'")
+    rows = c.fetchall()
+
+    conn.close()
+
+    return jsonify([
+        {
+            "symbol": r[0],
+            "signal": r[1],
+            "entry": r[2],
+            "exit": r[3],
+            "pnl": r[4],
+            "time": r[5]
+        }
+        for r in rows
+    ])
+
+
+# ---------------- ACCOUNT ----------------
+@app.route("/account")
+def account():
+    return jsonify({
+        "balance": round(get_balance(), 2)
     })
 
 
