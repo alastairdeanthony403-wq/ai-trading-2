@@ -1,5 +1,5 @@
 # ============================================================
-# AI Trading Web App (SMART MONEY PRO MAX VERSION - FIXED)
+# AI Trading Web App (SMART MONEY PRO MAX + TRADE HISTORY)
 # ============================================================
 
 from flask import Flask, render_template, request, jsonify
@@ -16,7 +16,10 @@ bot_config = {
     "risk_reward": 2
 }
 
+# ---------------- STORAGE ----------------
 last_signal = None
+trade_history = []
+executed_trades = set()
 
 
 # ---------------- DATA FETCH ----------------
@@ -99,6 +102,7 @@ def detect_fvg(df):
 
 def get_htf_bias(symbol):
     df = fetch_data(symbol, "4h")
+
     if df is None or len(df) < 50:
         return 0
 
@@ -182,13 +186,11 @@ def home():
     return render_template("index.html")
 
 
-# 🔥 FIX FOR YOUR ERROR
 @app.route("/charts")
 def charts():
     return render_template("charts.html")
 
 
-# 🔥 REQUIRED FOR SAVE BUTTON
 @app.route("/symbols", methods=["POST"])
 def update_symbols():
     data = request.json
@@ -197,8 +199,15 @@ def update_symbols():
     return jsonify({"symbols": bot_config["symbols"]})
 
 
+@app.route("/history")
+def history():
+    return jsonify(trade_history[-50:])
+
+
 @app.route("/signal")
 def signal():
+    global trade_history, executed_trades
+
     results = []
 
     for symbol in bot_config["symbols"]:
@@ -230,7 +239,7 @@ def signal():
             else:
                 sl, tp, pnl = None, None, 0
 
-            results.append({
+            result = {
                 "symbol": symbol,
                 "signal": sig["signal"],
                 "price": price,
@@ -240,7 +249,25 @@ def signal():
                 "score": sig["score"],
                 "pnl": round(pnl, 2),
                 "confidence": min(abs(sig["score"]) * 15, 100)
-            })
+            }
+
+            results.append(result)
+
+            # 🔥 TRADE LOGGING
+            trade_key = f"{symbol}_{sig['signal']}"
+
+            if sig["signal"] in ["BUY", "SELL"] and abs(sig["score"]) >= 4:
+                if trade_key not in executed_trades:
+                    executed_trades.add(trade_key)
+
+                    trade_history.append({
+                        "symbol": symbol,
+                        "signal": sig["signal"],
+                        "entry": price,
+                        "exit": round(live_price, 2),
+                        "pnl": round(pnl, 2),
+                        "time": str(df.iloc[-1]["date"])
+                    })
 
         except Exception as e:
             print(f"❌ Error with {symbol}: {e}")
