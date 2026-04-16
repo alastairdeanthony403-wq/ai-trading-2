@@ -68,10 +68,24 @@
             margin-top: 5px;
         }
 
-        .fill { height: 100%; }
+        .fill { height: 100%; transition: width 0.5s; }
 
         .green { background: #22c55e; }
         .red { background: #ef4444; }
+
+        /* 🔥 CONFIDENCE BAR */
+        .confidence-bar {
+            height: 6px;
+            background: #111;
+            border-radius: 5px;
+            margin-top: 5px;
+        }
+
+        .confidence-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #22c55e, #4ade80);
+            transition: width 0.6s;
+        }
 
         .blink {
             animation: blink 1s infinite;
@@ -111,7 +125,6 @@
 
 <h1>🚀 AI Trading Terminal</h1>
 
-<!-- ✅ NAV -->
 <div class="nav">
     <a href="/charts">
         <button>📊 Open Advanced Charts</button>
@@ -125,7 +138,7 @@
     <button onclick="saveConfig()">Save</button>
 </div>
 
-<!-- ===== ACCOUNT ===== -->
+<!-- ACCOUNT -->
 <div class="top-bar">
     <div>Balance: $<span id="balance">10000</span></div>
     <div>Total PnL: $<span id="totalPnL">0</span></div>
@@ -162,7 +175,7 @@ let account = {
     trades: []
 };
 
-let executedTrades = new Set(); // ✅ prevent duplicates
+let executedTrades = new Set();
 let chartWidgets = {};
 
 function safe(n){ return n ?? 0; }
@@ -191,15 +204,16 @@ function loadData(){
             let pnl = safe(s.pnl);
             totalPnL += pnl;
 
-            // ✅ PREVENT SPAM TRADES
-            let tradeKey = s.symbol + s.signal;
+            // ✅ UNIQUE TRADE KEY
+            let tradeKey = s.symbol + "_" + s.signal;
 
             if(Math.abs(s.score) >= 4 && !executedTrades.has(tradeKey)){
                 executedTrades.add(tradeKey);
 
                 account.trades.push({
                     symbol: s.symbol,
-                    pnl: pnl
+                    pnl: pnl,
+                    entry: s.price
                 });
 
                 account.balance += pnl;
@@ -214,17 +228,27 @@ function loadData(){
                 <p>Size: ${size}</p>
                 <p>PnL: ${pnl.toFixed(2)}</p>
 
+                <!-- PROFIT BAR -->
                 <div class="bar">
                     <div class="fill ${pnl>=0?'green':'red'}"
                          style="width:${Math.min(Math.abs(pnl),100)}%">
                     </div>
                 </div>
+
+                <!-- 🔥 CONFIDENCE BAR -->
+                <div class="confidence-bar">
+                    <div class="confidence-fill"
+                         style="width:${safe(s.confidence)}%">
+                    </div>
+                </div>
+                <small>Confidence: ${safe(s.confidence)}%</small>
+
             </div>`;
         });
 
         document.getElementById("signals").innerHTML = html;
 
-        // ===== BEST TRADE =====
+        // BEST TRADE
         if(data.best_trade){
             let b = data.best_trade;
 
@@ -233,15 +257,21 @@ function loadData(){
                     <h2>${b.symbol}</h2>
                     <p class="${getColor(b.signal)}">${b.signal}</p>
                     <p>Live: ${safe(b.live_price).toFixed(2)}</p>
+
+                    <div class="confidence-bar">
+                        <div class="confidence-fill"
+                             style="width:${safe(b.confidence)}%">
+                        </div>
+                    </div>
                 </div>`;
         }
 
-        // ===== ACCOUNT =====
+        // ACCOUNT
         document.getElementById("balance").innerText = account.balance.toFixed(2);
         document.getElementById("totalPnL").innerText = totalPnL.toFixed(2);
         document.getElementById("trades").innerText = account.trades.length;
 
-        // ===== HISTORY =====
+        // HISTORY
         let hist = "";
         account.trades.slice(-10).reverse().forEach(t=>{
             hist += `<tr>
@@ -252,7 +282,6 @@ function loadData(){
 
         document.getElementById("history").innerHTML = hist;
 
-        // ===== CHARTS =====
         loadCharts(document.getElementById("symbols").value.split(","));
     });
 }
