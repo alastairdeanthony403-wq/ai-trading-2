@@ -1,6 +1,5 @@
 # ============================================================
-# AI Trading Web App (SMART MONEY PRO MAX VERSION)
-# Includes: BOS + Liquidity + Candle Theory + OB + FVG + MTF
+# AI Trading Web App (SMART MONEY PRO MAX VERSION - FIXED)
 # ============================================================
 
 from flask import Flask, render_template, request, jsonify
@@ -24,11 +23,11 @@ last_signal = None
 def fetch_binance(symbol, interval="1h"):
     try:
         url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit=200"
-        data = requests.get(url).json()
+        data = requests.get(url, timeout=10).json()
 
         df = pd.DataFrame(data, columns=[
-            "time", "open", "high", "low", "close", "volume",
-            "_", "_", "_", "_", "_", "_"
+            "time","open","high","low","close","volume",
+            "_","_","_","_","_","_"
         ])
 
         df["date"] = pd.to_datetime(df["time"], unit="ms")
@@ -46,7 +45,7 @@ def fetch_binance(symbol, interval="1h"):
 def fetch_yahoo(symbol):
     try:
         url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range=1mo&interval=1h"
-        r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
+        r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
         data = r.json()["chart"]["result"][0]
 
         df = pd.DataFrame({
@@ -66,69 +65,52 @@ def fetch_yahoo(symbol):
 
 
 def fetch_data(symbol, interval="1h"):
-    if "USDT" in symbol:
-        return fetch_binance(symbol, interval)
-    else:
-        return fetch_yahoo(symbol)
+    return fetch_binance(symbol, interval) if "USDT" in symbol else fetch_yahoo(symbol)
 
 
-# ---------------- SMART MONEY FUNCTIONS ----------------
+# ---------------- SMART MONEY ----------------
 
-# 🔥 ORDER BLOCK DETECTION
 def detect_order_block(df):
     for i in range(len(df)-3, 0, -1):
-        candle = df.iloc[i]
-        next_candle = df.iloc[i+1]
+        c = df.iloc[i]
+        n = df.iloc[i+1]
 
-        # Bullish OB (last down candle before up move)
-        if candle["close"] < candle["open"] and next_candle["close"] > next_candle["open"]:
-            return ("BUY", candle["low"])
+        if c["close"] < c["open"] and n["close"] > n["open"]:
+            return ("BUY", c["low"])
 
-        # Bearish OB
-        if candle["close"] > candle["open"] and next_candle["close"] < next_candle["open"]:
-            return ("SELL", candle["high"])
+        if c["close"] > c["open"] and n["close"] < n["open"]:
+            return ("SELL", c["high"])
 
     return (None, None)
 
 
-# 🔥 FAIR VALUE GAP (FVG)
 def detect_fvg(df):
     for i in range(2, len(df)):
-        c1 = df.iloc[i-2]
-        c2 = df.iloc[i-1]
-        c3 = df.iloc[i]
+        c1, c3 = df.iloc[i-2], df.iloc[i]
 
-        # Bullish gap
         if c1["high"] < c3["low"]:
             return ("BUY", c1["high"], c3["low"])
 
-        # Bearish gap
         if c1["low"] > c3["high"]:
             return ("SELL", c3["high"], c1["low"])
 
     return (None, None, None)
 
 
-# 🔥 MULTI TIMEFRAME BIAS
 def get_htf_bias(symbol):
-    df_htf = fetch_data(symbol, interval="4h")
-
-    if df_htf is None or len(df_htf) < 50:
+    df = fetch_data(symbol, "4h")
+    if df is None or len(df) < 50:
         return 0
 
-    recent_high = df_htf["high"].tail(20).max()
-    recent_low = df_htf["low"].tail(20).min()
-    price = df_htf.iloc[-1]["close"]
+    high = df["high"].tail(20).max()
+    low = df["low"].tail(20).min()
+    price = df.iloc[-1]["close"]
 
-    mid = (recent_high + recent_low) / 2
-
-    if price > mid:
-        return -1  # premium → sell bias
-    else:
-        return 1   # discount → buy bias
+    mid = (high + low) / 2
+    return -1 if price > mid else 1
 
 
-# ---------------- MAIN SIGNAL ----------------
+# ---------------- SIGNAL ----------------
 def generate_signal(df, symbol):
     latest = df.iloc[-1]
     prev = df.iloc[-2]
@@ -143,46 +125,46 @@ def generate_signal(df, symbol):
 
     score = 0
 
-    # 🔥 BOS
+    # BOS
     if latest["close"] > prev["high"]:
         score += 2
     elif latest["close"] < prev["low"]:
         score -= 2
 
-    # 🔥 Liquidity sweep
+    # Liquidity sweep
     if latest["high"] > prev["high"] and latest["close"] < prev["high"]:
         score -= 2
     if latest["low"] < prev["low"] and latest["close"] > prev["low"]:
         score += 2
 
-    # 🔥 Candle strength
+    # Candle strength
     if body > rng * 0.6:
         score += 2 if latest["close"] > latest["open"] else -2
 
-    # 🔥 Wicks
+    # Wicks
     if lower_wick > body:
         score += 1
     if upper_wick > body:
         score -= 1
 
-    # 🔥 ORDER BLOCK
+    # Order Block
     ob_type, ob_level = detect_order_block(df)
     if ob_type == "BUY" and price <= ob_level * 1.01:
         score += 2
     elif ob_type == "SELL" and price >= ob_level * 0.99:
         score -= 2
 
-    # 🔥 FVG
+    # FVG
     fvg_type, fvg_low, fvg_high = detect_fvg(df)
     if fvg_type == "BUY" and price <= fvg_high:
         score += 1
     elif fvg_type == "SELL" and price >= fvg_low:
         score -= 1
 
-    # 🔥 MULTI TIMEFRAME
+    # HTF bias
     score += get_htf_bias(symbol)
 
-    # FINAL
+    # Decision
     if score >= 4:
         signal = "BUY"
     elif score <= -4:
@@ -190,17 +172,29 @@ def generate_signal(df, symbol):
     else:
         signal = "HOLD"
 
-    return {
-        "signal": signal,
-        "price": round(price, 2),
-        "score": score
-    }
+    return {"signal": signal, "price": round(price, 2), "score": score}
 
 
 # ---------------- ROUTES ----------------
+
 @app.route("/")
 def home():
     return render_template("index.html")
+
+
+# 🔥 FIX FOR YOUR ERROR
+@app.route("/charts")
+def charts():
+    return render_template("charts.html")
+
+
+# 🔥 REQUIRED FOR SAVE BUTTON
+@app.route("/symbols", methods=["POST"])
+def update_symbols():
+    data = request.json
+    bot_config["symbols"] = data.get("symbols", bot_config["symbols"])
+    bot_config["risk_reward"] = float(data.get("risk_reward", 2))
+    return jsonify({"symbols": bot_config["symbols"]})
 
 
 @app.route("/signal")
@@ -220,16 +214,16 @@ def signal():
             live_price = float(df.iloc[-1]["close"])
             rr = bot_config["risk_reward"]
 
-            recent_low = df["low"].tail(10).min()
-            recent_high = df["high"].tail(10).max()
+            low = df["low"].tail(10).min()
+            high = df["high"].tail(10).max()
 
             if sig["signal"] == "BUY":
-                sl = round(recent_low, 2)
+                sl = round(low, 2)
                 tp = round(price + (price - sl) * rr, 2)
                 pnl = live_price - price
 
             elif sig["signal"] == "SELL":
-                sl = round(recent_high, 2)
+                sl = round(high, 2)
                 tp = round(price - (sl - price) * rr, 2)
                 pnl = price - live_price
 
