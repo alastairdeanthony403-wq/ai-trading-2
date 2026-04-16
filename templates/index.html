@@ -73,7 +73,6 @@
         .green { background: #22c55e; }
         .red { background: #ef4444; }
 
-        /* 🔥 CONFIDENCE BAR */
         .confidence-bar {
             height: 6px;
             background: #111;
@@ -140,9 +139,8 @@
 
 <!-- ACCOUNT -->
 <div class="top-bar">
-    <div>Balance: $<span id="balance">10000</span></div>
     <div>Total PnL: $<span id="totalPnL">0</span></div>
-    <div>Trades: <span id="trades">0</span></div>
+    <div>Signals: <span id="trades">0</span></div>
 </div>
 
 <div class="main">
@@ -163,19 +161,14 @@
     <h3>📉 Charts</h3>
     <div id="charts"></div>
 
-    <h3>📜 Trade History</h3>
+    <h3>📜 Trade History (REAL)</h3>
     <table id="history"></table>
 </div>
 
 <script>
 const API = "/signal";
+const HISTORY_API = "/history";
 
-let account = {
-    balance: 10000,
-    trades: []
-};
-
-let executedTrades = new Set();
 let chartWidgets = {};
 
 function safe(n){ return n ?? 0; }
@@ -184,7 +177,7 @@ function getColor(s){
     return s==="BUY"?"buy":"sell";
 }
 
-// ================= LOAD DATA =================
+// ================= LOAD SIGNALS =================
 function loadData(){
     fetch(API)
     .then(r=>r.json())
@@ -195,29 +188,8 @@ function loadData(){
 
         data.all_signals.forEach(s=>{
 
-            let riskPercent = document.getElementById("risk").value / 100;
-            let riskAmount = account.balance * riskPercent;
-
-            let stopDist = Math.abs(s.price - s.stop_loss);
-            let size = stopDist ? (riskAmount / stopDist).toFixed(2) : 0;
-
             let pnl = safe(s.pnl);
             totalPnL += pnl;
-
-            // ✅ UNIQUE TRADE KEY
-            let tradeKey = s.symbol + "_" + s.signal;
-
-            if(Math.abs(s.score) >= 4 && !executedTrades.has(tradeKey)){
-                executedTrades.add(tradeKey);
-
-                account.trades.push({
-                    symbol: s.symbol,
-                    pnl: pnl,
-                    entry: s.price
-                });
-
-                account.balance += pnl;
-            }
 
             html += `
             <div class="card">
@@ -225,17 +197,14 @@ function loadData(){
                 <p class="${getColor(s.signal)}">${s.signal}</p>
 
                 <p>Live: <span class="blink">${safe(s.live_price).toFixed(2)}</span></p>
-                <p>Size: ${size}</p>
                 <p>PnL: ${pnl.toFixed(2)}</p>
 
-                <!-- PROFIT BAR -->
                 <div class="bar">
                     <div class="fill ${pnl>=0?'green':'red'}"
                          style="width:${Math.min(Math.abs(pnl),100)}%">
                     </div>
                 </div>
 
-                <!-- 🔥 CONFIDENCE BAR -->
                 <div class="confidence-bar">
                     <div class="confidence-fill"
                          style="width:${safe(s.confidence)}%">
@@ -266,23 +235,34 @@ function loadData(){
                 </div>`;
         }
 
-        // ACCOUNT
-        document.getElementById("balance").innerText = account.balance.toFixed(2);
         document.getElementById("totalPnL").innerText = totalPnL.toFixed(2);
-        document.getElementById("trades").innerText = account.trades.length;
+        document.getElementById("trades").innerText = data.all_signals.length;
 
-        // HISTORY
-        let hist = "";
-        account.trades.slice(-10).reverse().forEach(t=>{
-            hist += `<tr>
+        loadCharts(document.getElementById("symbols").value.split(","));
+    });
+}
+
+// ================= LOAD REAL HISTORY =================
+function loadHistory(){
+    fetch(HISTORY_API)
+    .then(r=>r.json())
+    .then(data=>{
+
+        let html = "";
+
+        data.slice().reverse().forEach(t=>{
+            html += `
+            <tr>
                 <td>${t.symbol}</td>
-                <td class="${t.pnl>=0?'buy':'sell'}">${t.pnl.toFixed(2)}</td>
+                <td>${t.signal}</td>
+                <td>${t.entry}</td>
+                <td>${t.exit}</td>
+                <td class="${t.pnl>=0?'buy':'sell'}">${t.pnl}</td>
+                <td>${t.time}</td>
             </tr>`;
         });
 
-        document.getElementById("history").innerHTML = hist;
-
-        loadCharts(document.getElementById("symbols").value.split(","));
+        document.getElementById("history").innerHTML = html;
     });
 }
 
@@ -320,8 +300,13 @@ function saveConfig(){
 }
 
 // ================= LOOP =================
-setInterval(loadData, 5000);
+setInterval(()=>{
+    loadData();
+    loadHistory();
+}, 5000);
+
 loadData();
+loadHistory();
 </script>
 
 </body>
