@@ -2,7 +2,6 @@
 <html>
 <head>
     <title>AI Trading Terminal</title>
-    <script src="https://s3.tradingview.com/tv.js"></script>
 
     <style>
         body {
@@ -12,18 +11,22 @@
             color: white;
         }
 
-        h1 {
-            text-align: center;
-            padding: 10px;
-        }
+        h1 { text-align: center; }
 
         .nav {
-            text-align: center;
-            margin-bottom: 5px;
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin: 10px;
         }
 
-        .nav button {
+        .nav a button {
             background: #2563eb;
+            padding: 8px;
+            border-radius: 6px;
+            border: none;
+            color: white;
+            cursor: pointer;
         }
 
         .top-bar {
@@ -33,23 +36,6 @@
             padding: 10px;
         }
 
-        .main {
-            display: grid;
-            grid-template-columns: 2fr 1fr;
-            height: 55vh;
-        }
-
-        .left, .right {
-            padding: 10px;
-            overflow-y: auto;
-        }
-
-        .bottom {
-            height: 45vh;
-            padding: 10px;
-            overflow-y: auto;
-        }
-
         .card {
             background: #1e293b;
             padding: 10px;
@@ -57,65 +43,18 @@
             border-radius: 10px;
         }
 
-        .buy { color: #22c55e; }
-        .sell { color: #ef4444; }
-
-        .bar {
-            height: 6px;
-            background: #111;
-            border-radius: 5px;
-            overflow: hidden;
-            margin-top: 5px;
+        .alerts {
+            position: fixed;
+            right: 10px;
+            top: 10px;
+            width: 250px;
         }
 
-        .fill { height: 100%; transition: width 0.5s; }
-
-        .green { background: #22c55e; }
-        .red { background: #ef4444; }
-
-        .confidence-bar {
-            height: 6px;
-            background: #111;
-            border-radius: 5px;
-            margin-top: 5px;
-        }
-
-        .confidence-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #22c55e, #4ade80);
-            transition: width 0.6s;
-        }
-
-        .blink {
-            animation: blink 1s infinite;
-        }
-
-        @keyframes blink {
-            50% { opacity: 0.3; }
-        }
-
-        input, button {
-            padding: 6px;
-            margin: 3px;
-            border-radius: 5px;
-            border: none;
-        }
-
-        button {
-            background: #22c55e;
-            color: white;
-            cursor: pointer;
-        }
-
-        table {
-            width: 100%;
-            font-size: 12px;
-            border-collapse: collapse;
-        }
-
-        td {
-            padding: 4px;
-            border-bottom: 1px solid #222;
+        .alert {
+            background: #ef4444;
+            padding: 8px;
+            margin: 5px;
+            border-radius: 6px;
         }
     </style>
 </head>
@@ -124,206 +63,87 @@
 
 <h1>🚀 AI Trading Terminal</h1>
 
+<!-- NAVIGATION -->
 <div class="nav">
-    <a href="/charts">
-        <button>📊 Open Advanced Charts</button>
-    </a>
+    <a href="/"><button>Dashboard</button></a>
+    <a href="/charts"><button>Charts</button></a>
+    <a href="/analytics"><button>Analytics</button></a>
+    <a href="/realtime"><button>Realtime</button></a>
 </div>
 
-<div style="text-align:center;">
-    <input id="symbols" value="BTCUSDT,ETHUSDT,AAPL">
-    <input id="rr" value="2">
-    <input id="risk" value="1">
-    <button onclick="saveConfig()">Save</button>
-</div>
-
-<!-- ACCOUNT -->
+<!-- STATS -->
 <div class="top-bar">
-    <div>Total PnL: $<span id="totalPnL">0</span></div>
-    <div>Signals: <span id="trades">0</span></div>
+    <div>Balance: $<span id="balance">0</span></div>
+    <div>Win Rate: <span id="winrate">0%</span></div>
+    <div>Trades: <span id="trades">0</span></div>
 </div>
 
-<div class="main">
+<div id="signals"></div>
 
-    <div class="left">
-        <h3>📊 Signals</h3>
-        <div id="signals"></div>
-    </div>
+<!-- ALERT PANEL -->
+<div class="alerts" id="alerts"></div>
 
-    <div class="right">
-        <h3>🔥 Best Trade</h3>
-        <div id="best"></div>
-    </div>
-
-</div>
-
-<div class="bottom">
-    <h3>📉 Charts</h3>
-    <div id="charts"></div>
-
-    <h3>📜 Trade History (REAL)</h3>
-    <table id="history"></table>
-</div>
+<audio id="alertSound" src="https://www.soundjay.com/buttons/sounds/beep-07.mp3"></audio>
 
 <script>
 const API = "/signal";
-const HISTORY_API = "/history";
 
-let chartWidgets = {};
+let lastSignals = {};
 
-function safe(n){ return n ?? 0; }
-
-function getColor(s){
-    return s==="BUY"?"buy":"sell";
-}
-
-// ================= LOAD SIGNALS =================
 function loadData(){
     fetch(API)
     .then(r=>r.json())
     .then(data=>{
 
+        document.getElementById("balance").innerText = data.balance.toFixed(2);
+
+        let wins = 0;
+
         let html = "";
-        let totalPnL = 0;
+
+        data.history.forEach(t=>{
+            if(t.pnl > 0) wins++;
+        });
+
+        let winrate = data.history.length ? (wins/data.history.length*100).toFixed(1) : 0;
+
+        document.getElementById("winrate").innerText = winrate + "%";
+        document.getElementById("trades").innerText = data.history.length;
 
         data.all_signals.forEach(s=>{
 
-            let pnl = safe(s.pnl);
-            totalPnL += pnl;
+            // ALERT SYSTEM
+            if(lastSignals[s.symbol] && lastSignals[s.symbol] !== s.signal){
+                triggerAlert(`${s.symbol} → ${s.signal}`);
+            }
 
-            html += `
-            <div class="card">
+            lastSignals[s.symbol] = s.signal;
+
+            html += `<div class="card">
                 <b>${s.symbol}</b>
-                <p class="${getColor(s.signal)}">${s.signal}</p>
-
-                <p>Live: <span class="blink">${safe(s.live_price).toFixed(2)}</span></p>
-                <p>PnL: ${pnl.toFixed(2)}</p>
-
-                <div class="bar">
-                    <div class="fill ${pnl>=0?'green':'red'}"
-                         style="width:${Math.min(Math.abs(pnl),100)}%">
-                    </div>
-                </div>
-
-                <div class="confidence-bar">
-                    <div class="confidence-fill"
-                         style="width:${safe(s.confidence)}%">
-                    </div>
-                </div>
-                <small>Confidence: ${safe(s.confidence)}%</small>
-
+                <p>${s.signal}</p>
+                <p>Price: ${s.live_price}</p>
             </div>`;
         });
 
         document.getElementById("signals").innerHTML = html;
-
-        // BEST TRADE
-        if(data.best_trade){
-            let b = data.best_trade;
-
-            document.getElementById("best").innerHTML = `
-                <div class="card">
-                    <h2>${b.symbol}</h2>
-                    <p class="${getColor(b.signal)}">${b.signal}</p>
-                    <p>Live: ${safe(b.live_price).toFixed(2)}</p>
-
-                    <div class="confidence-bar">
-                        <div class="confidence-fill"
-                             style="width:${safe(b.confidence)}%">
-                        </div>
-                    </div>
-                </div>`;
-        }
-
-        document.getElementById("totalPnL").innerText = totalPnL.toFixed(2);
-        document.getElementById("trades").innerText = data.all_signals.length;
-
-        loadCharts(document.getElementById("symbols").value.split(","));
-    })
-    .catch(err => {
-        console.error("Signal load error:", err);
     });
 }
 
-// ================= FIXED HISTORY =================
-function loadHistory(){
-    fetch(HISTORY_API)
-    .then(r=>{
-        if(!r.ok) throw new Error("No history endpoint");
-        return r.json();
-    })
-    .then(data=>{
+function triggerAlert(msg){
+    let div = document.createElement("div");
+    div.className = "alert";
+    div.innerText = msg;
 
-        if(!data || data.length === 0){
-            document.getElementById("history").innerHTML =
-                "<tr><td colspan='6'>No trades yet</td></tr>";
-            return;
-        }
+    document.getElementById("alerts").appendChild(div);
 
-        let html = "";
+    document.getElementById("alertSound").play();
 
-        data.slice().reverse().forEach(t=>{
-            html += `
-            <tr>
-                <td>${t.symbol || "-"}</td>
-                <td>${t.signal || "-"}</td>
-                <td>${t.entry || "-"}</td>
-                <td>${t.exit || "-"}</td>
-                <td class="${t.pnl>=0?'buy':'sell'}">${safe(t.pnl).toFixed(2)}</td>
-                <td>${t.time || "-"}</td>
-            </tr>`;
-        });
-
-        document.getElementById("history").innerHTML = html;
-    })
-    .catch(err => {
-        console.warn("History not available yet");
-        document.getElementById("history").innerHTML =
-            "<tr><td colspan='6'>History unavailable</td></tr>";
-    });
+    setTimeout(()=>div.remove(), 5000);
 }
 
-// ================= CHARTS =================
-function loadCharts(symbols){
-
-    symbols.forEach(s=>{
-        if(chartWidgets[s]) return;
-
-        let div = document.createElement("div");
-        div.className = "card";
-        div.innerHTML = `<div id="tv_${s}" style="height:300px;"></div>`;
-        document.getElementById("charts").appendChild(div);
-
-        chartWidgets[s] = new TradingView.widget({
-            container_id:`tv_${s}`,
-            width:"100%",
-            height:300,
-            symbol:s.includes("USDT")?"BINANCE:"+s:"NASDAQ:"+s,
-            theme:"dark"
-        });
-    });
-}
-
-// ================= CONFIG =================
-function saveConfig(){
-    fetch("/symbols",{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({
-            symbols: document.getElementById("symbols").value.split(","),
-            risk_reward: document.getElementById("rr").value
-        })
-    });
-}
-
-// ================= LOOP =================
-setInterval(()=>{
-    loadData();
-    loadHistory();
-}, 5000);
-
+setInterval(loadData, 3000);
 loadData();
-loadHistory();
 </script>
 
 </body>
