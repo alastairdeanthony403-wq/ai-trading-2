@@ -239,30 +239,47 @@ function loadData(){
         document.getElementById("trades").innerText = data.all_signals.length;
 
         loadCharts(document.getElementById("symbols").value.split(","));
+    })
+    .catch(err => {
+        console.error("Signal load error:", err);
     });
 }
 
-// ================= LOAD REAL HISTORY =================
+// ================= FIXED HISTORY =================
 function loadHistory(){
     fetch(HISTORY_API)
-    .then(r=>r.json())
+    .then(r=>{
+        if(!r.ok) throw new Error("No history endpoint");
+        return r.json();
+    })
     .then(data=>{
+
+        if(!data || data.length === 0){
+            document.getElementById("history").innerHTML =
+                "<tr><td colspan='6'>No trades yet</td></tr>";
+            return;
+        }
 
         let html = "";
 
         data.slice().reverse().forEach(t=>{
             html += `
             <tr>
-                <td>${t.symbol}</td>
-                <td>${t.signal}</td>
-                <td>${t.entry}</td>
-                <td>${t.exit}</td>
-                <td class="${t.pnl>=0?'buy':'sell'}">${t.pnl}</td>
-                <td>${t.time}</td>
+                <td>${t.symbol || "-"}</td>
+                <td>${t.signal || "-"}</td>
+                <td>${t.entry || "-"}</td>
+                <td>${t.exit || "-"}</td>
+                <td class="${t.pnl>=0?'buy':'sell'}">${safe(t.pnl).toFixed(2)}</td>
+                <td>${t.time || "-"}</td>
             </tr>`;
         });
 
         document.getElementById("history").innerHTML = html;
+    })
+    .catch(err => {
+        console.warn("History not available yet");
+        document.getElementById("history").innerHTML =
+            "<tr><td colspan='6'>History unavailable</td></tr>";
     });
 }
 
