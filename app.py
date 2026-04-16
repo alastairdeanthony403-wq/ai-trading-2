@@ -1,182 +1,105 @@
 # ============================================================
-# AI Trading Web App (SMART MONEY PRO MAX + TRADE HISTORY)
+# AI Trading Engine (REAL TRADE TRACKING VERSION)
 # ============================================================
 
 from flask import Flask, render_template, request, jsonify
 from flask_cors import CORS
 import pandas as pd
 import requests
+import uuid
 
 app = Flask(__name__)
 CORS(app)
 
 # ---------------- CONFIG ----------------
 bot_config = {
-    "symbols": ["BTCUSDT", "ETHUSDT", "AAPL", "TSLA"],
-    "risk_reward": 2
+    "symbols": ["BTCUSDT", "ETHUSDT", "AAPL"],
+    "risk_reward": 2,
+    "risk_percent": 1
 }
 
-# ---------------- STORAGE ----------------
-last_signal = None
-trade_history = []
-executed_trades = set()
+# ---------------- ACCOUNT ----------------
+account = {
+    "balance": 10000,
+    "open_trades": [],
+    "trade_history": []
+}
 
 
-# ---------------- DATA FETCH ----------------
-def fetch_binance(symbol, interval="1h"):
-    try:
-        url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit=200"
-        data = requests.get(url, timeout=10).json()
+# ---------------- DATA ----------------
+def fetch_binance(symbol):
+    url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval=1m&limit=100"
+    data = requests.get(url).json()
 
-        df = pd.DataFrame(data, columns=[
-            "time","open","high","low","close","volume",
-            "_","_","_","_","_","_"
-        ])
+    df = pd.DataFrame(data, columns=[
+        "time","open","high","low","close","volume",
+        "_","_","_","_","_","_"
+    ])
 
-        df["date"] = pd.to_datetime(df["time"], unit="ms")
-        df[["open","high","low","close","volume"]] = df[
-            ["open","high","low","close","volume"]
-        ].astype(float)
+    df["close"] = df["close"].astype(float)
+    df["high"] = df["high"].astype(float)
+    df["low"] = df["low"].astype(float)
 
-        return df[["date","open","high","low","close","volume"]]
-
-    except Exception as e:
-        print(f"❌ Binance error: {e}")
-        return None
+    return df
 
 
-def fetch_yahoo(symbol):
-    try:
-        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range=1mo&interval=1h"
-        r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
-        data = r.json()["chart"]["result"][0]
-
-        df = pd.DataFrame({
-            "date": pd.to_datetime(data["timestamp"], unit="s"),
-            "open": data["indicators"]["quote"][0]["open"],
-            "high": data["indicators"]["quote"][0]["high"],
-            "low": data["indicators"]["quote"][0]["low"],
-            "close": data["indicators"]["quote"][0]["close"],
-            "volume": data["indicators"]["quote"][0]["volume"]
-        }).dropna()
-
-        return df
-
-    except Exception as e:
-        print(f"❌ Yahoo error: {e}")
-        return None
-
-
-def fetch_data(symbol, interval="1h"):
-    return fetch_binance(symbol, interval) if "USDT" in symbol else fetch_yahoo(symbol)
-
-
-# ---------------- SMART MONEY ----------------
-
-def detect_order_block(df):
-    for i in range(len(df)-3, 0, -1):
-        c = df.iloc[i]
-        n = df.iloc[i+1]
-
-        if c["close"] < c["open"] and n["close"] > n["open"]:
-            return ("BUY", c["low"])
-
-        if c["close"] > c["open"] and n["close"] < n["open"]:
-            return ("SELL", c["high"])
-
-    return (None, None)
-
-
-def detect_fvg(df):
-    for i in range(2, len(df)):
-        c1, c3 = df.iloc[i-2], df.iloc[i]
-
-        if c1["high"] < c3["low"]:
-            return ("BUY", c1["high"], c3["low"])
-
-        if c1["low"] > c3["high"]:
-            return ("SELL", c3["high"], c1["low"])
-
-    return (None, None, None)
-
-
-def get_htf_bias(symbol):
-    df = fetch_data(symbol, "4h")
-
-    if df is None or len(df) < 50:
-        return 0
-
-    high = df["high"].tail(20).max()
-    low = df["low"].tail(20).min()
+# ---------------- SIGNAL (simple for now) ----------------
+def generate_signal(df):
     price = df.iloc[-1]["close"]
+    prev = df.iloc[-2]["close"]
 
-    mid = (high + low) / 2
-    return -1 if price > mid else 1
+    if price > prev:
+        return "BUY"
+    elif price < prev:
+        return "SELL"
+    return "HOLD"
 
 
-# ---------------- SIGNAL ----------------
-def generate_signal(df, symbol):
-    latest = df.iloc[-1]
-    prev = df.iloc[-2]
+# ---------------- TRADE ENGINE ----------------
 
-    price = latest["close"]
+def open_trade(symbol, signal, price):
+    risk_amount = account["balance"] * (bot_config["risk_percent"] / 100)
 
-    body = abs(latest["close"] - latest["open"])
-    rng = latest["high"] - latest["low"]
+    sl = price * 0.99 if signal == "BUY" else price * 1.01
+    tp = price + (price - sl) * bot_config["risk_reward"] if signal == "BUY" else price - (sl - price) * bot_config["risk_reward"]
 
-    upper_wick = latest["high"] - max(latest["open"], latest["close"])
-    lower_wick = min(latest["open"], latest["close"]) - latest["low"]
+    stop_distance = abs(price - sl)
+    size = risk_amount / stop_distance if stop_distance else 0
 
-    score = 0
+    trade = {
+        "id": str(uuid.uuid4()),
+        "symbol": symbol,
+        "type": signal,
+        "entry": price,
+        "sl": sl,
+        "tp": tp,
+        "size": size,
+        "status": "OPEN"
+    }
 
-    # BOS
-    if latest["close"] > prev["high"]:
-        score += 2
-    elif latest["close"] < prev["low"]:
-        score -= 2
+    account["open_trades"].append(trade)
 
-    # Liquidity sweep
-    if latest["high"] > prev["high"] and latest["close"] < prev["high"]:
-        score -= 2
-    if latest["low"] < prev["low"] and latest["close"] > prev["low"]:
-        score += 2
 
-    # Candle strength
-    if body > rng * 0.6:
-        score += 2 if latest["close"] > latest["open"] else -2
+def update_trades(symbol, price):
+    for trade in account["open_trades"][:]:
 
-    # Wicks
-    if lower_wick > body:
-        score += 1
-    if upper_wick > body:
-        score -= 1
+        if trade["symbol"] != symbol:
+            continue
 
-    # Order Block
-    ob_type, ob_level = detect_order_block(df)
-    if ob_type == "BUY" and price <= ob_level * 1.01:
-        score += 2
-    elif ob_type == "SELL" and price >= ob_level * 0.99:
-        score -= 2
+        pnl = (price - trade["entry"]) * trade["size"] if trade["type"] == "BUY" else (trade["entry"] - price) * trade["size"]
 
-    # FVG
-    fvg_type, fvg_low, fvg_high = detect_fvg(df)
-    if fvg_type == "BUY" and price <= fvg_high:
-        score += 1
-    elif fvg_type == "SELL" and price >= fvg_low:
-        score -= 1
+        # CLOSE CONDITIONS
+        if (trade["type"] == "BUY" and (price <= trade["sl"] or price >= trade["tp"])) or \
+           (trade["type"] == "SELL" and (price >= trade["sl"] or price <= trade["tp"])):
 
-    # HTF bias
-    score += get_htf_bias(symbol)
+            trade["exit"] = price
+            trade["pnl"] = round(pnl, 2)
+            trade["status"] = "CLOSED"
 
-    # Decision
-    if score >= 4:
-        signal = "BUY"
-    elif score <= -4:
-        signal = "SELL"
-    else:
-        signal = "HOLD"
+            account["balance"] += trade["pnl"]
 
-    return {"signal": signal, "price": round(price, 2), "score": score}
+            account["trade_history"].append(trade)
+            account["open_trades"].remove(trade)
 
 
 # ---------------- ROUTES ----------------
@@ -186,100 +109,51 @@ def home():
     return render_template("index.html")
 
 
-@app.route("/charts")
-def charts():
-    return render_template("charts.html")
-
-
-@app.route("/symbols", methods=["POST"])
-def update_symbols():
-    data = request.json
-    bot_config["symbols"] = data.get("symbols", bot_config["symbols"])
-    bot_config["risk_reward"] = float(data.get("risk_reward", 2))
-    return jsonify({"symbols": bot_config["symbols"]})
-
-
-@app.route("/history")
-def history():
-    return jsonify(trade_history[-50:])
-
-
 @app.route("/signal")
 def signal():
-    global trade_history, executed_trades
 
     results = []
 
     for symbol in bot_config["symbols"]:
-        df = fetch_data(symbol)
 
-        if df is None or len(df) < 50:
-            continue
+        df = fetch_binance(symbol)
+        price = df.iloc[-1]["close"]
 
-        try:
-            sig = generate_signal(df, symbol)
+        sig = generate_signal(df)
 
-            price = sig["price"]
-            live_price = float(df.iloc[-1]["close"])
-            rr = bot_config["risk_reward"]
+        # UPDATE EXISTING TRADES
+        update_trades(symbol, price)
 
-            low = df["low"].tail(10).min()
-            high = df["high"].tail(10).max()
+        # OPEN NEW TRADE (if none open for symbol)
+        if sig in ["BUY", "SELL"] and not any(t["symbol"] == symbol for t in account["open_trades"]):
+            open_trade(symbol, sig, price)
 
-            if sig["signal"] == "BUY":
-                sl = round(low, 2)
-                tp = round(price + (price - sl) * rr, 2)
-                pnl = live_price - price
+        # GET CURRENT PNL
+        open_trade_obj = next((t for t in account["open_trades"] if t["symbol"] == symbol), None)
 
-            elif sig["signal"] == "SELL":
-                sl = round(high, 2)
-                tp = round(price - (sl - price) * rr, 2)
-                pnl = price - live_price
-
+        pnl = 0
+        if open_trade_obj:
+            if open_trade_obj["type"] == "BUY":
+                pnl = (price - open_trade_obj["entry"]) * open_trade_obj["size"]
             else:
-                sl, tp, pnl = None, None, 0
+                pnl = (open_trade_obj["entry"] - price) * open_trade_obj["size"]
 
-            result = {
-                "symbol": symbol,
-                "signal": sig["signal"],
-                "price": price,
-                "live_price": round(live_price, 2),
-                "stop_loss": sl,
-                "take_profit": tp,
-                "score": sig["score"],
-                "pnl": round(pnl, 2),
-                "confidence": min(abs(sig["score"]) * 15, 100)
-            }
+        results.append({
+            "symbol": symbol,
+            "signal": sig,
+            "price": round(price, 2),
+            "live_price": round(price, 2),
+            "pnl": round(pnl, 2),
+            "confidence": 70
+        })
 
-            results.append(result)
-
-            # 🔥 TRADE LOGGING
-            trade_key = f"{symbol}_{sig['signal']}"
-
-            if sig["signal"] in ["BUY", "SELL"] and abs(sig["score"]) >= 4:
-                if trade_key not in executed_trades:
-                    executed_trades.add(trade_key)
-
-                    trade_history.append({
-                        "symbol": symbol,
-                        "signal": sig["signal"],
-                        "entry": price,
-                        "exit": round(live_price, 2),
-                        "pnl": round(pnl, 2),
-                        "time": str(df.iloc[-1]["date"])
-                    })
-
-        except Exception as e:
-            print(f"❌ Error with {symbol}: {e}")
-
-    if not results:
-        return jsonify({"best_trade": None, "all_signals": []})
-
-    best = sorted(results, key=lambda x: abs(x["score"]), reverse=True)[0]
+    best = results[0] if results else None
 
     return jsonify({
         "best_trade": best,
-        "all_signals": results
+        "all_signals": results,
+        "balance": account["balance"],
+        "history": account["trade_history"]
     })
 
 
