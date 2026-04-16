@@ -1,1 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Analytics</title>
 
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        body {
+            background: #0b1220;
+            color: white;
+            font-family: Arial;
+        }
+
+        canvas {
+            max-width: 800px;
+            margin: auto;
+        }
+    </style>
+</head>
+
+<body>
+
+<h1 style="text-align:center;">📊 Analytics</h1>
+
+<canvas id="equityChart"></canvas>
+
+<script>
+fetch("/signal")
+.then(r=>r.json())
+.then(data=>{
+
+    let equity = 10000;
+    let curve = [equity];
+
+    data.history.forEach(t=>{
+        equity += t.pnl;
+        curve.push(equity);
+    });
+
+    new Chart(document.getElementById("equityChart"), {
+        type: "line",
+        data: {
+            labels: curve.map((_,i)=>i),
+            datasets: [{
+                label: "Equity Curve",
+                data: curve
+            }]
+        }
+    });
+});
+</script>
+
+</body>
+</html>
