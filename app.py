@@ -1,5 +1,5 @@
 # ============================================================
-# AI Trading Engine (FULL PRO VERSION - FIXED + STABLE)
+# AI Trading Engine (FULL PRO VERSION - REALTIME UPGRADE)
 # ============================================================
 
 from flask import Flask, render_template, jsonify
@@ -56,7 +56,7 @@ def init_db():
 
 init_db()
 
-# ---------------- SAFE DATA FETCH ----------------
+# ---------------- DATA ----------------
 def fetch_binance(symbol):
     try:
         url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval=1m&limit=100"
@@ -194,13 +194,46 @@ def update_trades(symbol, price):
             close_trade(trade_id, price, pnl, sym)
 
 
-# ---------------- ROUTES ----------------
+# ============================================================
+# 🚀 NEW REALTIME ROUTE (THIS IS THE UPGRADE)
+# ============================================================
+@app.route("/live_trades")
+def live_trades():
 
+    results = []
+
+    open_trades = get_open_trades()
+
+    for t in open_trades:
+        trade_id, symbol, type_, entry, sl, tp, size, _, _, _, time = t
+
+        df = fetch_binance(symbol)
+        if df is None:
+            continue
+
+        price = df.iloc[-1]["close"]
+
+        pnl = (price - entry) * size if type_ == "BUY" else (entry - price) * size
+
+        results.append({
+            "symbol": symbol,
+            "type": type_,
+            "entry": round(entry, 2),
+            "price": round(price, 2),
+            "size": round(size, 4),
+            "pnl": round(pnl, 2),
+            "sl": round(sl, 2),
+            "tp": round(tp, 2)
+        })
+
+    return jsonify(results)
+
+
+# ---------------- ROUTES ----------------
 @app.route("/")
 def home():
     return render_template("index.html")
 
-# ✅ FIXED: add missing pages
 @app.route("/charts")
 def charts():
     return render_template("charts.html")
@@ -212,143 +245,6 @@ def analytics():
 @app.route("/realtime")
 def realtime():
     return render_template("realtime.html")
-
-
-@app.route("/signal")
-def signal():
-    results = []
-
-    open_trades = get_open_trades()
-    open_symbols = [t[1] for t in open_trades]
-
-    for symbol in bot_config["symbols"]:
-        df = fetch_binance(symbol)
-
-        if df is None or len(df) < 2:
-            continue
-
-        price = df.iloc[-1]["close"]
-        sig = generate_signal(df)
-
-        update_trades(symbol, price)
-
-        if sig in ["BUY", "SELL"] and symbol not in open_symbols:
-            open_trade(symbol, sig, price)
-
-        current_trade = next((t for t in get_open_trades() if t[1] == symbol), None)
-
-        pnl = 0
-        if current_trade:
-            _, _, type_, entry, _, _, size, _, _, _, _ = current_trade
-            pnl = (price - entry) * size if type_ == "BUY" else (entry - price) * size
-
-        results.append({
-            "symbol": symbol,
-            "signal": sig,
-            "price": round(price, 2),
-            "live_price": round(price, 2),
-            "pnl": round(pnl, 2),
-            "confidence": 70
-        })
-
-    best = results[0] if results else None
-
-    return jsonify({
-        "best_trade": best,
-        "all_signals": results
-    })
-
-
-# ---------------- HISTORY ----------------
-@app.route("/history")
-def history():
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-
-    c.execute("SELECT symbol, type, entry, exit, pnl, time FROM trades WHERE status='CLOSED'")
-    rows = c.fetchall()
-
-    conn.close()
-
-    return jsonify([
-        {
-            "symbol": r[0],
-            "signal": r[1],
-            "entry": r[2],
-            "exit": r[3],
-            "pnl": r[4],
-            "time": r[5]
-        }
-        for r in rows
-    ])
-
-
-# ---------------- EQUITY ----------------
-@app.route("/equity")
-def equity():
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-
-    c.execute("SELECT pnl, time FROM trades WHERE status='CLOSED' ORDER BY time")
-    rows = c.fetchall()
-
-    conn.close()
-
-    balance = 10000
-    curve = []
-
-    for pnl, time in rows:
-        balance += pnl
-        curve.append({"time": time, "balance": round(balance, 2)})
-
-    return jsonify(curve)
-
-
-# ---------------- STATS ----------------
-@app.route("/stats")
-def stats():
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-
-    c.execute("SELECT pnl FROM trades WHERE status='CLOSED'")
-    pnls = [r[0] for r in c.fetchall()]
-
-    conn.close()
-
-    total = len(pnls)
-    wins = len([p for p in pnls if p > 0])
-    win_rate = (wins / total * 100) if total else 0
-
-    return jsonify({
-        "trades": total,
-        "wins": wins,
-        "win_rate": round(win_rate, 2)
-    })
-
-
-# ---------------- ALERTS ----------------
-@app.route("/alerts")
-def alerts():
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-
-    c.execute("SELECT message, time FROM alerts ORDER BY time DESC LIMIT 20")
-    rows = c.fetchall()
-
-    conn.close()
-
-    return jsonify([
-        {"message": r[0], "time": r[1]}
-        for r in rows
-    ])
-
-
-# ---------------- ACCOUNT ----------------
-@app.route("/account")
-def account():
-    return jsonify({
-        "balance": round(get_balance(), 2)
-    })
 
 
 # ---------------- RUN ----------------
