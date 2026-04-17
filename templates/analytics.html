@@ -1,54 +1,195 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Analytics</title>
-
+    <title>Analytics Dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <style>
         body {
+            margin: 0;
+            font-family: Arial;
             background: #0b1220;
             color: white;
-            font-family: Arial;
         }
 
-        canvas {
-            max-width: 800px;
-            margin: auto;
+        h1 {
+            text-align: center;
+            padding: 10px;
+        }
+
+        .nav {
+            text-align: center;
+            margin-bottom: 10px;
+        }
+
+        .nav a {
+            text-decoration: none;
+        }
+
+        .nav button {
+            margin: 5px;
+            padding: 8px 12px;
+            border: none;
+            border-radius: 6px;
+            background: #2563eb;
+            color: white;
+            cursor: pointer;
+        }
+
+        .container {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 10px;
+            padding: 10px;
+        }
+
+        .card {
+            background: #1e293b;
+            padding: 15px;
+            border-radius: 10px;
+        }
+
+        .stats {
+            display: flex;
+            justify-content: space-around;
+            text-align: center;
+        }
+
+        .alerts {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .alert {
+            padding: 8px;
+            margin: 5px 0;
+            background: #111827;
+            border-radius: 5px;
+            font-size: 13px;
         }
     </style>
 </head>
 
 <body>
 
-<h1 style="text-align:center;">📊 Analytics</h1>
+<h1>📊 Analytics Dashboard</h1>
 
-<canvas id="equityChart"></canvas>
+<!-- NAV -->
+<div class="nav">
+    <a href="/"><button>🏠 Home</button></a>
+    <a href="/charts"><button>📉 Charts</button></a>
+    <a href="/realtime"><button>⚡ Realtime</button></a>
+</div>
+
+<div class="container">
+
+    <!-- LEFT -->
+    <div class="card">
+        <h3>📈 Equity Curve</h3>
+        <canvas id="equityChart"></canvas>
+    </div>
+
+    <!-- RIGHT -->
+    <div>
+
+        <div class="card">
+            <h3>📊 Stats</h3>
+            <div class="stats">
+                <div>
+                    <h2 id="totalTrades">0</h2>
+                    <p>Trades</p>
+                </div>
+                <div>
+                    <h2 id="wins">0</h2>
+                    <p>Wins</p>
+                </div>
+                <div>
+                    <h2 id="winRate">0%</h2>
+                    <p>Win Rate</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="card alerts">
+            <h3>🔔 Live Alerts</h3>
+            <div id="alerts"></div>
+        </div>
+
+    </div>
+
+</div>
 
 <script>
-fetch("/signal")
-.then(r=>r.json())
-.then(data=>{
+let chart;
 
-    let equity = 10000;
-    let curve = [equity];
+// ================= EQUITY =================
+function loadEquity(){
+    fetch("/equity")
+    .then(r=>r.json())
+    .then(data=>{
 
-    data.history.forEach(t=>{
-        equity += t.pnl;
-        curve.push(equity);
+        const labels = data.map(d => d.time);
+        const values = data.map(d => d.balance);
+
+        if(chart) chart.destroy();
+
+        chart = new Chart(document.getElementById("equityChart"), {
+            type: "line",
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: "Balance",
+                    data: values,
+                    borderColor: "#22c55e",
+                    tension: 0.3
+                }]
+            }
+        });
     });
+}
 
-    new Chart(document.getElementById("equityChart"), {
-        type: "line",
-        data: {
-            labels: curve.map((_,i)=>i),
-            datasets: [{
-                label: "Equity Curve",
-                data: curve
-            }]
-        }
+// ================= STATS =================
+function loadStats(){
+    fetch("/stats")
+    .then(r=>r.json())
+    .then(data=>{
+        document.getElementById("totalTrades").innerText = data.trades;
+        document.getElementById("wins").innerText = data.wins;
+        document.getElementById("winRate").innerText = data.win_rate + "%";
     });
-});
+}
+
+// ================= ALERTS =================
+function loadAlerts(){
+    fetch("/alerts")
+    .then(r=>r.json())
+    .then(data=>{
+
+        let html = "";
+
+        data.forEach(a=>{
+            html += `
+                <div class="alert">
+                    ${a.message}<br>
+                    <small>${a.time}</small>
+                </div>
+            `;
+        });
+
+        document.getElementById("alerts").innerHTML = html;
+    });
+}
+
+// ================= LOOP =================
+setInterval(()=>{
+    loadEquity();
+    loadStats();
+    loadAlerts();
+}, 5000);
+
+loadEquity();
+loadStats();
+loadAlerts();
 </script>
 
 </body>
