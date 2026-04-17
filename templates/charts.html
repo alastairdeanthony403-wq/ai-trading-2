@@ -1,1 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Advanced Charts | AI Trading Platform</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      background: #0b1220;
+      color: #e5e7eb;
+      font-family: Arial, sans-serif;
+    }
 
+    .glass {
+      background: rgba(17, 24, 39, 0.88);
+      border: 1px solid rgba(255,255,255,0.06);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+      backdrop-filter: blur(8px);
+    }
+
+    .tab-btn.active {
+      background: #2563eb;
+      color: white;
+      border-color: #2563eb;
+    }
+
+    .widget-wrap {
+      min-height: 520px;
+    }
+
+    .mini-widget {
+      min-height: 300px;
+    }
+  </style>
+</head>
+<body class="min-h-screen">
+
+  <!-- Header -->
+  <header class="border-b border-slate-800 bg-slate-950/90 sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 py-4 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+      <div>
+        <h1 class="text-2xl font-bold tracking-tight">Advanced Charts</h1>
+        <p class="text-sm text-slate-400">
+          Manual analysis and visual confirmation across key global markets
+        </p>
+      </div>
+
+      <nav class="flex flex-wrap gap-2">
+        <a href="/" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-sm">Dashboard</a>
+        <a href="/charts" class="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-sm">Charts</a>
+        <a href="/analytics" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-sm">Analytics</a>
+        <a href="/realtime" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-sm">Realtime</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 py-6 space-y-6">
+
+    <!-- Page Intro -->
+    <section class="glass rounded-2xl p-5">
+      <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div>
+          <h2 class="text-xl font-semibold">Market Overview</h2>
+          <p class="text-slate-400 text-sm mt-1">
+            Use this page to confirm trends, compare macro instruments, and validate AI signals visually before trusting the trade engine.
+          </p>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 min-w-[280px]">
+          <div class="bg-slate-900 border border-slate-700 rounded-xl p-3">
+            <p class="text-xs text-slate-400">Purpose</p>
+            <p class="font-semibold">Visual Confirmation</p>
+          </div>
+          <div class="bg-slate-900 border border-slate-700 rounded-xl p-3">
+            <p class="text-xs text-slate-400">Use Case</p>
+            <p class="font-semibold">Manual Analysis</p>
+          </div>
+          <div class="bg-slate-900 border border-slate-700 rounded-xl p-3">
+            <p class="text-xs text-slate-400">Supports</p>
+            <p class="font-semibold">AI Trade Decisions</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tabs -->
+    <section class="glass rounded-2xl p-4">
+      <div class="flex flex-wrap gap-2">
+        <button class="tab-btn active px-4 py-2 rounded-xl border border-slate-700 bg-slate-900 text-sm" data-tab="commodities">
+          Commodities
+        </button>
+        <button class="tab-btn px-4 py-2 rounded-xl border border-slate-700 bg-slate-900 text-sm" data-tab="currencies">
+          Currencies
+        </button>
+        <button class="tab-btn px-4 py-2 rounded-xl border border-slate-700 bg-slate-900 text-sm" data-tab="indices">
+          Indices
+        </button>
+      </div>
+    </section>
+
+    <!-- Commodities -->
+    <section id="tab-commodities" class="tab-content space-y-6">
+
+      <div class="glass rounded-2xl p-4">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h3 class="text-xl font-semibold">Commodities</h3>
+            <p class="text-sm text-slate-400">Track gold, silver, crude oil and broad commodity sentiment.</p>
+          </div>
+        </div>
+
+        <div class="widget-wrap rounded-xl overflow-hidden">
+          <div class="tradingview-widget-container h-[520px]">
+            <div id="tv-commodities-main" class="h-full"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div class="glass rounded-2xl p-4 mini-widget">
+          <h4 class="font-semibold mb-3">Gold</h4>
+          <div class="tradingview-widget-container h-[260px]">
+            <div id="tv-gold" class="h-full"></div>
+          </div>
+        </div>
+
+        <div class="glass rounded-2xl p-4 mini-widget">
+          <h4 class="font-semibold mb-3">Silver</h4>
+          <div class="tradingview-widget-container h-[260px]">
+            <div id="tv-silver" class="h-full"></div>
+          </div>
+        </div>
+
+        <div class="glass rounded-2xl p-4 mini-widget">
+          <h4 class="font-semibold mb-3">Crude Oil</h4>
+          <div class="tradingview-widget-container h-[260px]">
+            <div id="tv-oil" class="h-full"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Currencies -->
+    <section id="tab-currencies" class="tab-content hidden space-y-6">
+
+      <div class="glass rounded-2xl p-4">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h3 class="text-xl font-semibold">Currencies</h3>
+            <p class="text-sm text-slate-400">Watch major FX pairs for dollar strength, trend alignment and macro sentiment.</p>
+          </div>
+        </div>
+
+        <div class="widget-wrap rounded-xl overflow-hidden">
+          <div class="tradingview-widget-container h-[520px]">
+            <div id="tv-currencies-main" class="h-full"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div class="glass rounded-2xl p-4 mini-widget">
+          <h4 class="font-semibold mb-3">EUR/USD</h4>
+          <div class="tradingview-widget-container h-[260px]">
+            <div id="tv-eurusd" class="h-full"></div>
+          </div>
+        </div>
+
+        <div class="glass rounded-2xl p-4 mini-widget">
+          <h4 class="font-semibold mb-3">GBP/USD</h4>
+          <div class="tradingview-widget-container h-[260px]">
+            <div id="tv-gbpusd" class="h-full"></div>
+          </div>
+        </div>
+
+        <div class="glass rounded-2xl p-4 mini-widget">
+          <h4 class="font-semibold mb-3">USD/JPY</h4>
+          <div class="tradingview-widget-container h-[260px]">
+            <div id="tv-usdjpy" class="h-full"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Indices -->
+    <section id="tab-indices" class="tab-content hidden space-y-6">
+
+      <div class="glass rounded-2xl p-4">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h3 class="text-xl font-semibold">Indices</h3>
+            <p class="text-sm text-slate-400">Use indices for risk-on / risk-off confirmation and broader market context.</p>
+          </div>
+        </div>
+
+        <div class="widget-wrap rounded-xl overflow-hidden">
+          <div class="tradingview-widget-container h-[520px]">
+            <div id="tv-indices-main" class="h-full"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div class="glass rounded-2xl p-4 mini-widget">
+          <h4 class="font-semibold mb-3">S&P 500</h4>
+          <div class="tradingview-widget-container h-[260px]">
+            <div id="tv-spx" class="h-full"></div>
+          </div>
+        </div>
+
+        <div class="glass rounded-2xl p-4 mini-widget">
+          <h4 class="font-semibold mb-3">NASDAQ 100</h4>
+          <div class="tradingview-widget-container h-[260px]">
+            <div id="tv-nasdaq" class="h-full"></div>
+          </div>
+        </div>
+
+        <div class="glass rounded-2xl p-4 mini-widget">
+          <h4 class="font-semibold mb-3">Dow Jones</h4>
+          <div class="tradingview-widget-container h-[260px]">
+            <div id="tv-dji" class="h-full"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Notes / Confirmation Panel -->
+    <section class="glass rounded-2xl p-5">
+      <h3 class="text-lg font-semibold mb-4">Manual Confirmation Checklist</h3>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+        <div class="bg-slate-900 border border-slate-700 rounded-xl p-4">
+          <p class="font-semibold mb-2">Trend</p>
+          <p class="text-sm text-slate-400">Is the higher timeframe trending up, down, or ranging?</p>
+        </div>
+        <div class="bg-slate-900 border border-slate-700 rounded-xl p-4">
+          <p class="font-semibold mb-2">Correlation</p>
+          <p class="text-sm text-slate-400">Do commodities, FX and indices support the same story?</p>
+        </div>
+        <div class="bg-slate-900 border border-slate-700 rounded-xl p-4">
+          <p class="font-semibold mb-2">Confirmation</p>
+          <p class="text-sm text-slate-400">Does price action support your AI-generated signal?</p>
+        </div>
+        <div class="bg-slate-900 border border-slate-700 rounded-xl p-4">
+          <p class="font-semibold mb-2">Risk</p>
+          <p class="text-sm text-slate-400">Would you manually approve this setup?</p>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="https://s3.tradingview.com/tv.js"></script>
+  <script>
+    function createAdvancedChart(containerId, symbol, interval = "60") {
+      new TradingView.widget({
+        autosize: true,
+        symbol: symbol,
+        interval: interval,
+        timezone: "Etc/UTC",
+        theme: "dark",
+        style: "1",
+        locale: "en",
+        toolbar_bg: "#0f172a",
+        enable_publishing: false,
+        allow_symbol_change: true,
+        hide_side_toolbar: false,
+        withdateranges: true,
+        details: true,
+        hotlist: false,
+        calendar: false,
+        studies: [
+          "RSI@tv-basicstudies",
+          "MACD@tv-basicstudies",
+          "Volume@tv-basicstudies"
+        ],
+        container_id: containerId
+      });
+    }
+
+    function createMiniChart(containerId, symbol, interval = "240") {
+      new TradingView.widget({
+        autosize: true,
+        symbol: symbol,
+        interval: interval,
+        timezone: "Etc/UTC",
+        theme: "dark",
+        style: "1",
+        locale: "en",
+        toolbar_bg: "#0f172a",
+        enable_publishing: false,
+        allow_symbol_change: false,
+        hide_side_toolbar: true,
+        hide_top_toolbar: true,
+        withdateranges: false,
+        details: false,
+        hotlist: false,
+        calendar: false,
+        studies: [
+          "RSI@tv-basicstudies"
+        ],
+        container_id: containerId
+      });
+    }
+
+    // Main category charts
+    createAdvancedChart("tv-commodities-main", "TVC:GOLD", "60");
+    createAdvancedChart("tv-currencies-main", "FX:EURUSD", "60");
+    createAdvancedChart("tv-indices-main", "FOREXCOM:SPXUSD", "60");
+
+    // Commodities minis
+    createMiniChart("tv-gold", "TVC:GOLD", "240");
+    createMiniChart("tv-silver", "TVC:SILVER", "240");
+    createMiniChart("tv-oil", "TVC:USOIL", "240");
+
+    // Currencies minis
+    createMiniChart("tv-eurusd", "FX:EURUSD", "240");
+    createMiniChart("tv-gbpusd", "FX:GBPUSD", "240");
+    createMiniChart("tv-usdjpy", "FX:USDJPY", "240");
+
+    // Indices minis
+    createMiniChart("tv-spx", "FOREXCOM:SPXUSD", "240");
+    createMiniChart("tv-nasdaq", "FOREXCOM:NSXUSD", "240");
+    createMiniChart("tv-dji", "FOREXCOM:DJI", "240");
+
+    // Tabs
+    const tabButtons = document.querySelectorAll(".tab-btn");
+    const tabContents = document.querySelectorAll(".tab-content");
+
+    tabButtons.forEach(button => {
+      button.addEventListener("click", () => {
+        const tab = button.dataset.tab;
+
+        tabButtons.forEach(btn => btn.classList.remove("active"));
+        button.classList.add("active");
+
+        tabContents.forEach(content => content.classList.add("hidden"));
+        document.getElementById(`tab-${tab}`).classList.remove("hidden");
+      });
+    });
+  </script>
+</body>
+</html>
