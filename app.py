@@ -1,10 +1,5 @@
 # ============================================================
-# AI Trading Engine (FULL PRO VERSION)
-# Includes:
-# - Database persistence
-# - Equity curve
-# - Stats (win rate, total trades)
-# - Alerts system
+# AI Trading Engine (FULL PRO VERSION - FIXED + STABLE)
 # ============================================================
 
 from flask import Flask, render_template, jsonify
@@ -61,21 +56,34 @@ def init_db():
 
 init_db()
 
-# ---------------- DATA ----------------
+# ---------------- SAFE DATA FETCH ----------------
 def fetch_binance(symbol):
-    url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval=1m&limit=100"
-    data = requests.get(url).json()
+    try:
+        url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval=1m&limit=100"
+        r = requests.get(url, timeout=5)
 
-    df = pd.DataFrame(data, columns=[
-        "time","open","high","low","close","volume",
-        "_","_","_","_","_","_"
-    ])
+        if r.status_code != 200:
+            return None
 
-    df["close"] = df["close"].astype(float)
-    df["high"] = df["high"].astype(float)
-    df["low"] = df["low"].astype(float)
+        data = r.json()
 
-    return df
+        if not isinstance(data, list):
+            return None
+
+        df = pd.DataFrame(data, columns=[
+            "time","open","high","low","close","volume",
+            "_","_","_","_","_","_"
+        ])
+
+        df["close"] = df["close"].astype(float)
+        df["high"] = df["high"].astype(float)
+        df["low"] = df["low"].astype(float)
+
+        return df
+
+    except:
+        return None
+
 
 # ---------------- SIGNAL ----------------
 def generate_signal(df):
@@ -88,6 +96,7 @@ def generate_signal(df):
         return "SELL"
     return "HOLD"
 
+
 # ---------------- ACCOUNT ----------------
 def get_balance():
     conn = sqlite3.connect(DB_NAME)
@@ -98,6 +107,7 @@ def get_balance():
 
     conn.close()
     return 10000 + total_pnl
+
 
 # ---------------- ALERTS ----------------
 def add_alert(message):
@@ -111,7 +121,8 @@ def add_alert(message):
     conn.commit()
     conn.close()
 
-# ---------------- TRADE ENGINE ----------------
+
+# ---------------- TRADES ----------------
 def get_open_trades():
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
@@ -121,6 +132,7 @@ def get_open_trades():
 
     conn.close()
     return rows
+
 
 def open_trade(symbol, signal, price):
     conn = sqlite3.connect(DB_NAME)
@@ -148,6 +160,7 @@ def open_trade(symbol, signal, price):
     conn.commit()
     conn.close()
 
+
 def close_trade(trade_id, exit_price, pnl, symbol):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
@@ -162,6 +175,7 @@ def close_trade(trade_id, exit_price, pnl, symbol):
 
     conn.commit()
     conn.close()
+
 
 def update_trades(symbol, price):
     open_trades = get_open_trades()
@@ -179,15 +193,29 @@ def update_trades(symbol, price):
 
             close_trade(trade_id, price, pnl, sym)
 
+
 # ---------------- ROUTES ----------------
 
 @app.route("/")
 def home():
     return render_template("index.html")
 
+# ✅ FIXED: add missing pages
+@app.route("/charts")
+def charts():
+    return render_template("charts.html")
+
+@app.route("/analytics")
+def analytics():
+    return render_template("analytics.html")
+
+@app.route("/realtime")
+def realtime():
+    return render_template("realtime.html")
+
+
 @app.route("/signal")
 def signal():
-
     results = []
 
     open_trades = get_open_trades()
@@ -195,8 +223,11 @@ def signal():
 
     for symbol in bot_config["symbols"]:
         df = fetch_binance(symbol)
-        price = df.iloc[-1]["close"]
 
+        if df is None or len(df) < 2:
+            continue
+
+        price = df.iloc[-1]["close"]
         sig = generate_signal(df)
 
         update_trades(symbol, price)
@@ -227,6 +258,7 @@ def signal():
         "all_signals": results
     })
 
+
 # ---------------- HISTORY ----------------
 @app.route("/history")
 def history():
@@ -250,7 +282,8 @@ def history():
         for r in rows
     ])
 
-# ---------------- EQUITY CURVE ----------------
+
+# ---------------- EQUITY ----------------
 @app.route("/equity")
 def equity():
     conn = sqlite3.connect(DB_NAME)
@@ -269,6 +302,7 @@ def equity():
         curve.append({"time": time, "balance": round(balance, 2)})
 
     return jsonify(curve)
+
 
 # ---------------- STATS ----------------
 @app.route("/stats")
@@ -291,6 +325,7 @@ def stats():
         "win_rate": round(win_rate, 2)
     })
 
+
 # ---------------- ALERTS ----------------
 @app.route("/alerts")
 def alerts():
@@ -307,12 +342,14 @@ def alerts():
         for r in rows
     ])
 
+
 # ---------------- ACCOUNT ----------------
 @app.route("/account")
 def account():
     return jsonify({
         "balance": round(get_balance(), 2)
     })
+
 
 # ---------------- RUN ----------------
 if __name__ == "__main__":
