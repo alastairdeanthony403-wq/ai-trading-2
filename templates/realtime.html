@@ -67,8 +67,9 @@
 
 <script>
 const symbols = ["btcusdt","ethusdt"];
-
 let prices = {};
+let signals = {};
+
 let audio = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
 
 // ================= CREATE UI =================
@@ -79,7 +80,9 @@ symbols.forEach(s=>{
 
     div.innerHTML = `
         <h3>${s.toUpperCase()}</h3>
+        <div id="signal_${s}">Signal: ...</div>
         <div class="price" id="price_${s}">0</div>
+        <div id="pnl_${s}">PnL: 0</div>
     `;
 
     document.getElementById("market").appendChild(div);
@@ -96,34 +99,80 @@ ws.onmessage = (event) => {
     const price = parseFloat(data.p);
 
     const el = document.getElementById("price_" + symbol);
-
     if(!el) return;
 
-    // Detect direction
     let prev = prices[symbol] || price;
 
+    // Direction color
     if(price > prev){
         el.className = "price up";
     } else if(price < prev){
         el.className = "price down";
     }
 
-    // Play sound on move
-    if(Math.abs(price - prev) > 1){
-        audio.play();
-    }
-
     el.innerText = price.toFixed(2);
     prices[symbol] = price;
+
+    // 🔥 REAL-TIME PNL UPDATE
+    updatePnL(symbol, price);
 };
 
-ws.onerror = () => {
-    console.log("WebSocket error");
-};
+// ================= BACKEND SIGNAL SYNC =================
+function loadSignals(){
+    fetch("/live_signals")
+    .then(r=>r.json())
+    .then(data=>{
 
-ws.onclose = () => {
-    console.log("WebSocket closed");
-};
+        data.forEach(s=>{
+            let symbol = s.symbol.toLowerCase();
+
+            let prevSignal = signals[symbol];
+
+            signals[symbol] = s.signal;
+
+            // Update UI
+            document.getElementById("signal_" + symbol).innerText =
+                "Signal: " + s.signal;
+
+            // 🔔 ALERT ON CHANGE
+            if(prevSignal && prevSignal !== s.signal){
+                audio.play();
+            }
+
+            // Initial PnL
+            document.getElementById("pnl_" + symbol).innerText =
+                "PnL: " + s.pnl;
+        });
+    });
+}
+
+// ================= REAL-TIME PNL =================
+function updatePnL(symbol, livePrice){
+    let signal = signals[symbol];
+
+    if(!signal) return;
+
+    let pnlEl = document.getElementById("pnl_" + symbol);
+
+    let basePrice = prices[symbol];
+
+    if(!basePrice) return;
+
+    let pnl = 0;
+
+    if(signal === "BUY"){
+        pnl = livePrice - basePrice;
+    } else if(signal === "SELL"){
+        pnl = basePrice - livePrice;
+    }
+
+    pnlEl.innerText = "PnL: " + pnl.toFixed(2);
+}
+
+// ================= LOOP =================
+setInterval(loadSignals, 3000); // lightweight polling
+
+loadSignals();
 </script>
 
 </body>
