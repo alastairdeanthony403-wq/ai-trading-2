@@ -1,40 +1,128 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Realtime Feed</title>
+    <title>Realtime Trading</title>
 
     <style>
         body {
+            margin: 0;
+            font-family: Arial;
             background: #0b1220;
             color: white;
-            font-family: Arial;
+        }
+
+        h1 {
+            text-align: center;
+            padding: 10px;
+        }
+
+        .nav {
+            text-align: center;
+        }
+
+        .nav button {
+            margin: 5px;
+            padding: 8px 12px;
+            background: #2563eb;
+            border: none;
+            border-radius: 6px;
+            color: white;
+            cursor: pointer;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 10px;
+            padding: 10px;
         }
 
         .card {
             background: #1e293b;
-            padding: 10px;
-            margin: 10px;
+            padding: 15px;
             border-radius: 10px;
         }
+
+        .price {
+            font-size: 22px;
+            font-weight: bold;
+        }
+
+        .up { color: #22c55e; }
+        .down { color: #ef4444; }
     </style>
 </head>
 
 <body>
 
-<h1>⚡ Real-Time Prices</h1>
+<h1>⚡ Realtime Market</h1>
 
-<div id="feed"></div>
+<div class="nav">
+    <a href="/"><button>🏠 Home</button></a>
+    <a href="/analytics"><button>📊 Analytics</button></a>
+    <a href="/charts"><button>📉 Charts</button></a>
+</div>
+
+<div class="grid" id="market"></div>
 
 <script>
-const socket = new WebSocket("wss://stream.binance.com:9443/ws/btcusdt@trade");
+const symbols = ["btcusdt","ethusdt"];
 
-socket.onmessage = function(event){
-    let data = JSON.parse(event.data);
+let prices = {};
+let audio = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
 
-    document.getElementById("feed").innerHTML = `
-        <div class="card">
-            BTC Price: ${parseFloat(data.p).toFixed(2)}
-        </div>`;
+// ================= CREATE UI =================
+symbols.forEach(s=>{
+    let div = document.createElement("div");
+    div.className = "card";
+    div.id = s;
+
+    div.innerHTML = `
+        <h3>${s.toUpperCase()}</h3>
+        <div class="price" id="price_${s}">0</div>
+    `;
+
+    document.getElementById("market").appendChild(div);
+});
+
+// ================= WEBSOCKET =================
+const streams = symbols.map(s => s + "@trade").join("/");
+const ws = new WebSocket(`wss://stream.binance.com:9443/ws/${streams}`);
+
+ws.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+
+    const symbol = data.s.toLowerCase();
+    const price = parseFloat(data.p);
+
+    const el = document.getElementById("price_" + symbol);
+
+    if(!el) return;
+
+    // Detect direction
+    let prev = prices[symbol] || price;
+
+    if(price > prev){
+        el.className = "price up";
+    } else if(price < prev){
+        el.className = "price down";
+    }
+
+    // Play sound on move
+    if(Math.abs(price - prev) > 1){
+        audio.play();
+    }
+
+    el.innerText = price.toFixed(2);
+    prices[symbol] = price;
+};
+
+ws.onerror = () => {
+    console.log("WebSocket error");
+};
+
+ws.onclose = () => {
+    console.log("WebSocket closed");
 };
 </script>
 
