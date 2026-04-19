@@ -105,29 +105,46 @@ def fetch_binance(symbol, interval="1m", limit=100):
 
 
 def fetch_binance_raw(symbol="BTCUSDT", interval="5m", limit=500):
+    if not symbol or not symbol.endswith("USDT"):
+        raise ValueError("Invalid symbol")
+
+    url = "https://api.binance.com/api/v3/klines"
+    params = {
+        "symbol": symbol,
+        "interval": interval,
+        "limit": limit
+    }
+
     try:
-        if not symbol or not symbol.endswith("USDT"):
-            return []
+        response = requests.get(url, params=params, timeout=20)
+    except requests.exceptions.Timeout:
+        raise RuntimeError("Request to Binance timed out while fetching historical candles")
+    except requests.exceptions.ConnectionError:
+        raise RuntimeError("Could not connect to Binance to fetch historical candles")
+    except requests.exceptions.RequestException as e:
+        raise RuntimeError(f"Network error while fetching historical candles: {str(e)}")
 
-        url = "https://api.binance.com/api/v3/klines"
-        params = {
-            "symbol": symbol,
-            "interval": interval,
-            "limit": limit
-        }
+    if response.status_code != 200:
+        response_preview = (response.text or "").strip()
+        if len(response_preview) > 300:
+            response_preview = response_preview[:300] + "..."
+        raise RuntimeError(
+            f"Binance returned HTTP {response.status_code} while fetching candles"
+            + (f": {response_preview}" if response_preview else "")
+        )
 
-        response = requests.get(url, params=params, timeout=15)
-        if response.status_code != 200:
-            return []
-
+    try:
         data = response.json()
-        if not isinstance(data, list):
-            return []
+    except ValueError:
+        raise RuntimeError("Binance returned an invalid JSON response")
 
-        return data
+    if not isinstance(data, list):
+        raise RuntimeError(f"Unexpected Binance response format: {data}")
 
-    except Exception:
-        return []
+    if len(data) == 0:
+        raise RuntimeError("Binance returned no candle data for that request")
+
+    return data
 
 
 # ---------------- SIGNAL / ANALYSIS ----------------
@@ -842,14 +859,10 @@ def api_backtest():
 
         if limit < 50:
             limit = 50
-        if limit > 1500:
-            limit = 1500
+        if limit > 1000:
+            limit = 1000
 
         candles = fetch_binance_raw(symbol=symbol, interval=interval, limit=limit)
-
-        if not candles:
-            return jsonify({"error": "Could not fetch historical candle data"}), 500
-
         signals = simple_signal_logic(candles, strategy=strategy)
         summary, trades = run_backtest_engine(
             candles,
