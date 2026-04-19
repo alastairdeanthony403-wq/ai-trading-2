@@ -1,5 +1,5 @@
 # ============================================================
-# AI Trading Engine (FULL PRO VERSION - REALTIME + CHARTS API)
+# AI Trading Engine (UNIFIED BOT LOGIC + TRUE BACKTESTER)
 # ============================================================
 
 from flask import Flask, render_template, jsonify, request
@@ -17,7 +17,8 @@ CORS(app)
 bot_config = {
     "symbols": ["BTCUSDT", "ETHUSDT"],
     "risk_reward": 2,
-    "risk_percent": 1
+    "risk_percent": 1,
+    "min_confidence": 60
 }
 
 DB_NAME = "trades.db"
@@ -44,7 +45,7 @@ COINBASE_GRANULARITY_MAP = {
     "5m": 300,
     "15m": 900,
     "1h": 3600,
-    "4h": 3600,  # fetched as 1h and aggregated to 4h
+    "4h": 3600,  # fetch 1h and aggregate to 4h
 }
 
 
@@ -84,10 +85,9 @@ def init_db():
 init_db()
 
 
-# ---------------- DATA ----------------
+# ---------------- DATA HELPERS ----------------
 def _request_json(url, params=None, timeout=10):
-    response = requests.get(url, params=params, timeout=timeout)
-    return response
+    return requests.get(url, params=params, timeout=timeout)
 
 
 def _fetch_binance_klines(symbol, interval="1m", limit=100):
@@ -109,7 +109,6 @@ def _fetch_binance_klines(symbol, interval="1m", limit=100):
                 data = response.json()
                 if isinstance(data, list) and len(data) >= 2:
                     return data
-
                 last_error = f"{base_url} returned invalid kline data"
                 continue
 
@@ -122,35 +121,6 @@ def _fetch_binance_klines(symbol, interval="1m", limit=100):
             last_error = f"{base_url} request failed: {str(e)}"
 
     raise RuntimeError(last_error or "All Binance endpoints failed")
-
-
-def fetch_binance(symbol, interval="1m", limit=100):
-    try:
-        if not symbol or not symbol.endswith("USDT"):
-            return None
-
-        data = _fetch_binance_klines(symbol, interval=interval, limit=limit)
-
-        df = pd.DataFrame(data, columns=[
-            "time", "open", "high", "low", "close", "volume",
-            "close_time", "quote_asset_volume", "number_of_trades",
-            "taker_buy_base", "taker_buy_quote", "ignore"
-        ])
-
-        numeric_cols = ["open", "high", "low", "close", "volume"]
-        for col in numeric_cols:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-
-        df["time"] = pd.to_datetime(df["time"], unit="ms", errors="coerce")
-        df.dropna(inplace=True)
-
-        if len(df) < 2:
-            return None
-
-        return df
-
-    except Exception:
-        return None
 
 
 def _coinbase_fetch_candles(product_id, granularity, total_needed):
@@ -213,8 +183,8 @@ def _aggregate_coinbase_1h_to_4h(rows, limit):
 
     rows = sorted(rows, key=lambda x: x[0])
     grouped = []
-
     bucket = []
+
     for row in rows:
         bucket.append(row)
         if len(bucket) == 4:
@@ -263,8 +233,6 @@ def _fetch_coinbase_raw(symbol="BTCUSDT", interval="5m", limit=200):
 
     converted = []
     for row in rows:
-        # Coinbase format:
-        # [time, low, high, open, close, volume]
         converted.append([
             int(row[0]) * 1000,
             str(row[3]),  # open
@@ -299,7 +267,36 @@ def fetch_binance_raw(symbol="BTCUSDT", interval="5m", limit=500):
         )
 
 
-# ---------------- SIGNAL / ANALYSIS ----------------
+def raw_candles_to_df(raw_candles):
+    if not raw_candles or len(raw_candles) < 2:
+        return None
+
+    df = pd.DataFrame(raw_candles, columns=[
+        "time", "open", "high", "low", "close", "volume"
+    ])
+
+    numeric_cols = ["open", "high", "low", "close", "volume"]
+    for col in numeric_cols:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    df["time"] = pd.to_datetime(df["time"], unit="ms", errors="coerce")
+    df.dropna(inplace=True)
+
+    if len(df) < 2:
+        return None
+
+    return df.reset_index(drop=True)
+
+
+def fetch_binance(symbol, interval="1m", limit=100):
+    try:
+        raw = fetch_binance_raw(symbol=symbol, interval=interval, limit=limit)
+        return raw_candles_to_df(raw)
+    except Exception:
+        return None
+
+
+# ---------------- CORE BOT LOGIC ----------------
 def generate_signal(df):
     if df is None or len(df) < 2:
         return "HOLD"
@@ -399,24 +396,84 @@ def get_trade_idea(signal):
     return "Wait for clearer confirmation"
 
 
-def get_symbol_summary(symbol):
-    df = fetch_binance(symbol)
-    if df is None:
-        return None
+def evaluate_bot_window(df, strategy="bot"):
+    if df is None or len(df) < 20:
+        return {
+            "signal": "HOLD",
+            "bias": "Neutral",
+            "structure": "Range / Mixed",
+            "regime": "Unknown",
+            "confidence": 50,
+            "trade_idea": "Not enough data"
+        }
 
-    price = float(df.iloc[-1]["close"])
-    signal = generate_signal(df)
+    latest_close = float(df.iloc[-1]["close"])
+    latest_open = float(df.iloc[-1]["open"])
+    latest_high = float(df.iloc[-1]["high"])
+    latest_low = float(df.iloc[-1]["low"])
+    prev_close = float(df.iloc[-2]["close"])
+
+    raw_signal = generate_signal(df)
     structure = get_structure(df)
     regime = get_market_regime(df)
-    confidence = estimate_confidence(df, signal)
-    bias = get_bias_from_signal(signal)
-    trade_idea = get_trade_idea(signal)
+    confidence = estimate_confidence(df, raw_signal)
+    bias = get_bias_from_signal(raw_signal)
+    trade_idea = get_trade_idea(raw_signal)
+
+    final_signal = "HOLD"
+
+    if strategy == "basic":
+        final_signal = raw_signal
+
+    elif strategy == "smart_money":
+        candle_body = abs(latest_close - latest_open)
+        candle_range = latest_high - latest_low if (latest_high - latest_low) != 0 else 1
+
+        if (
+            latest_close > latest_open
+            and candle_body > candle_range * 0.6
+            and latest_close > prev_close
+            and structure == "Bullish Structure"
+        ):
+            final_signal = "BUY"
+            confidence = max(confidence, 72)
+
+        elif (
+            latest_close < latest_open
+            and candle_body > candle_range * 0.6
+            and latest_close < prev_close
+            and structure == "Bearish Structure"
+        ):
+            final_signal = "SELL"
+            confidence = max(confidence, 72)
+
+        else:
+            final_signal = "HOLD"
+
+    elif strategy == "ema_rsi":
+        closes = df["close"]
+        avg_close = closes.tail(15).mean()
+        if latest_close > avg_close and prev_close < avg_close:
+            final_signal = "BUY"
+            confidence = max(confidence, 65)
+        elif latest_close < avg_close and prev_close > avg_close:
+            final_signal = "SELL"
+            confidence = max(confidence, 65)
+        else:
+            final_signal = "HOLD"
+
+    else:
+        # "bot" strategy = use live bot logic with structure + confidence filter
+        if raw_signal == "BUY" and structure == "Bullish Structure" and confidence >= bot_config["min_confidence"]:
+            final_signal = "BUY"
+        elif raw_signal == "SELL" and structure == "Bearish Structure" and confidence >= bot_config["min_confidence"]:
+            final_signal = "SELL"
+        else:
+            final_signal = "HOLD"
 
     return {
-        "symbol": symbol,
-        "price": round(price, 2),
-        "signal": signal,
-        "bias": bias,
+        "signal": final_signal,
+        "bias": get_bias_from_signal(final_signal) if final_signal != "HOLD" else bias,
         "structure": structure,
         "regime": regime,
         "confidence": confidence,
@@ -424,9 +481,59 @@ def get_symbol_summary(symbol):
     }
 
 
+def calculate_trade_levels(df, signal):
+    latest_close = float(df.iloc[-1]["close"])
+    latest_high = float(df.iloc[-1]["high"])
+    latest_low = float(df.iloc[-1]["low"])
+
+    if signal == "BUY":
+        sl = latest_low * 0.995
+        tp = latest_close + (latest_close - sl) * bot_config["risk_reward"]
+        return {
+            "entry": round(latest_close, 2),
+            "sl": round(sl, 2),
+            "tp": round(tp, 2)
+        }
+
+    if signal == "SELL":
+        sl = latest_high * 1.005
+        tp = latest_close - (sl - latest_close) * bot_config["risk_reward"]
+        return {
+            "entry": round(latest_close, 2),
+            "sl": round(sl, 2),
+            "tp": round(tp, 2)
+        }
+
+    return {
+        "entry": round(latest_close, 2),
+        "sl": round(latest_close, 2),
+        "tp": round(latest_close, 2)
+    }
+
+
+def get_symbol_summary(symbol, strategy="bot"):
+    df = fetch_binance(symbol)
+    if df is None:
+        return None
+
+    price = float(df.iloc[-1]["close"])
+    evaluation = evaluate_bot_window(df, strategy=strategy)
+
+    return {
+        "symbol": symbol,
+        "price": round(price, 2),
+        "signal": evaluation["signal"],
+        "bias": evaluation["bias"],
+        "structure": evaluation["structure"],
+        "regime": evaluation["regime"],
+        "confidence": evaluation["confidence"],
+        "trade_idea": evaluation["trade_idea"]
+    }
+
+
 def get_engine_snapshot():
     for symbol in bot_config["symbols"]:
-        summary = get_symbol_summary(symbol)
+        summary = get_symbol_summary(symbol, strategy="bot")
         if summary:
             return summary
 
@@ -574,7 +681,9 @@ def get_chart_candles(symbol="BTCUSDT", interval="1m", limit=200):
 
 
 def get_chart_signals(symbol="BTCUSDT", interval="1m", limit=200):
-    df = fetch_binance(symbol, interval=interval, limit=limit)
+    raw = fetch_binance_raw(symbol=symbol, interval=interval, limit=limit)
+    df = raw_candles_to_df(raw)
+
     if df is None or len(df) < 30:
         return {
             "markers": [],
@@ -592,15 +701,12 @@ def get_chart_signals(symbol="BTCUSDT", interval="1m", limit=200):
     times = [int(t.timestamp()) for t in df["time"]]
 
     for i in range(20, len(df)):
-        recent_avg = df["close"].iloc[i - 10:i].mean()
-        current_close = closes[i]
-        prev_close = closes[i - 1]
+        window_df = df.iloc[:i + 1].copy().reset_index(drop=True)
+        evaluation = evaluate_bot_window(window_df, strategy="bot")
+        signal = evaluation["signal"]
 
-        if prev_close <= recent_avg and current_close > recent_avg:
-            entry = current_close
-            sl = lows[i] * 0.995
-            tp = entry + (entry - sl) * bot_config["risk_reward"]
-
+        if signal == "BUY":
+            levels = calculate_trade_levels(window_df, signal)
             markers.append({
                 "time": times[i],
                 "position": "belowBar",
@@ -608,20 +714,16 @@ def get_chart_signals(symbol="BTCUSDT", interval="1m", limit=200):
                 "shape": "arrowUp",
                 "text": f"BUY {symbol}"
             })
-
             trade_levels.append({
                 "time": times[i],
                 "side": "BUY",
-                "entry": round(entry, 2),
-                "sl": round(sl, 2),
-                "tp": round(tp, 2)
+                "entry": levels["entry"],
+                "sl": levels["sl"],
+                "tp": levels["tp"]
             })
 
-        elif prev_close >= recent_avg and current_close < recent_avg:
-            entry = current_close
-            sl = highs[i] * 1.005
-            tp = entry - (sl - entry) * bot_config["risk_reward"]
-
+        elif signal == "SELL":
+            levels = calculate_trade_levels(window_df, signal)
             markers.append({
                 "time": times[i],
                 "position": "aboveBar",
@@ -629,13 +731,12 @@ def get_chart_signals(symbol="BTCUSDT", interval="1m", limit=200):
                 "shape": "arrowDown",
                 "text": f"SELL {symbol}"
             })
-
             trade_levels.append({
                 "time": times[i],
                 "side": "SELL",
-                "entry": round(entry, 2),
-                "sl": round(sl, 2),
-                "tp": round(tp, 2)
+                "entry": levels["entry"],
+                "sl": levels["sl"],
+                "tp": levels["tp"]
             })
 
     recent_high = max(highs[-30:])
@@ -697,74 +798,35 @@ def get_chart_signals(symbol="BTCUSDT", interval="1m", limit=200):
 
 
 # ---------------- BACKTESTER ----------------
-def simple_signal_logic(candles, strategy="basic"):
+def generate_backtest_signals(candles, strategy="bot"):
+    df = raw_candles_to_df(candles)
     signals = []
 
-    if not candles or len(candles) < 21:
+    if df is None or len(df) < 21:
         return signals
 
-    for i in range(20, len(candles)):
-        close_price = float(candles[i][4])
-        open_price = float(candles[i][1])
-        high_price = float(candles[i][2])
-        low_price = float(candles[i][3])
+    for i in range(20, len(df)):
+        window_df = df.iloc[:i + 1].copy().reset_index(drop=True)
+        evaluation = evaluate_bot_window(window_df, strategy=strategy)
+        signal_type = evaluation["signal"]
 
-        prev_close = float(candles[i - 1][4])
-        prev2_close = float(candles[i - 2][4])
+        if signal_type not in ["BUY", "SELL"]:
+            continue
 
-        time_str = datetime.utcfromtimestamp(candles[i][0] / 1000).strftime("%Y-%m-%d %H:%M:%S")
+        levels = calculate_trade_levels(window_df, signal_type)
+        signal_time = window_df.iloc[-1]["time"].strftime("%Y-%m-%d %H:%M:%S")
 
-        signal_type = None
-        stop_loss = None
-        take_profit = None
-
-        if strategy == "basic":
-            if close_price > prev_close > prev2_close:
-                signal_type = "BUY"
-                stop_loss = low_price * 0.995
-                take_profit = close_price * 1.01
-            elif close_price < prev_close < prev2_close:
-                signal_type = "SELL"
-                stop_loss = high_price * 1.005
-                take_profit = close_price * 0.99
-
-        elif strategy == "smart_money":
-            candle_body = abs(close_price - open_price)
-            candle_range = high_price - low_price if (high_price - low_price) != 0 else 1
-
-            if close_price > open_price and candle_body > candle_range * 0.6 and close_price > prev_close:
-                signal_type = "BUY"
-                stop_loss = low_price
-                take_profit = close_price + (close_price - low_price) * 2
-
-            elif close_price < open_price and candle_body > candle_range * 0.6 and close_price < prev_close:
-                signal_type = "SELL"
-                stop_loss = high_price
-                take_profit = close_price - (high_price - close_price) * 2
-
-        elif strategy == "ema_rsi":
-            closes = [float(c[4]) for c in candles[max(0, i - 14):i + 1]]
-            avg_close = sum(closes) / len(closes) if closes else close_price
-
-            if close_price > avg_close and prev_close < avg_close:
-                signal_type = "BUY"
-                stop_loss = low_price * 0.997
-                take_profit = close_price * 1.012
-
-            elif close_price < avg_close and prev_close > avg_close:
-                signal_type = "SELL"
-                stop_loss = high_price * 1.003
-                take_profit = close_price * 0.988
-
-        if signal_type and stop_loss is not None and take_profit is not None:
-            signals.append({
-                "index": i,
-                "type": signal_type,
-                "price": close_price,
-                "time": time_str,
-                "stop_loss": round(stop_loss, 2),
-                "take_profit": round(take_profit, 2)
-            })
+        signals.append({
+            "index": i,
+            "type": signal_type,
+            "price": levels["entry"],
+            "time": signal_time,
+            "stop_loss": levels["sl"],
+            "take_profit": levels["tp"],
+            "confidence": evaluation["confidence"],
+            "structure": evaluation["structure"],
+            "regime": evaluation["regime"]
+        })
 
     return signals
 
@@ -961,7 +1023,9 @@ def chart_confirmation():
 @app.route("/chart-status")
 def chart_status():
     symbol = request.args.get("symbol", "BTCUSDT").upper()
-    summary = get_symbol_summary(symbol)
+    strategy = request.args.get("strategy", "bot").lower()
+
+    summary = get_symbol_summary(symbol, strategy=strategy)
 
     if not summary:
         return jsonify({
@@ -1006,7 +1070,7 @@ def api_backtest():
         symbol = str(data.get("symbol", "BTCUSDT")).upper()
         interval = str(data.get("interval", "5m"))
         limit = int(data.get("limit", 200))
-        strategy = str(data.get("strategy", "basic"))
+        strategy = str(data.get("strategy", "bot")).lower()
         starting_balance = float(data.get("starting_balance", 1000))
 
         if limit < 50:
@@ -1015,7 +1079,7 @@ def api_backtest():
             limit = 1000
 
         candles = fetch_binance_raw(symbol=symbol, interval=interval, limit=limit)
-        signals = simple_signal_logic(candles, strategy=strategy)
+        signals = generate_backtest_signals(candles, strategy=strategy)
         summary, trades = run_backtest_engine(
             candles,
             signals,
