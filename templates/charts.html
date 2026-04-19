@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Advanced Charts | AI Trading Platform</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
   <style>
     body {
       background: #0b1220;
@@ -19,30 +20,10 @@
       backdrop-filter: blur(8px);
     }
 
-    .tab-btn.active {
+    .tf-btn.active {
       background: #2563eb;
       color: white;
       border-color: #2563eb;
-    }
-
-    .widget-wrap {
-      min-height: 520px;
-    }
-
-    .mini-widget {
-      min-height: 300px;
-    }
-
-    .status-buy {
-      color: #22c55e;
-    }
-
-    .status-sell {
-      color: #ef4444;
-    }
-
-    .status-hold {
-      color: #f59e0b;
     }
 
     .pill {
@@ -56,8 +37,53 @@
       background: rgba(15, 23, 42, 0.9);
     }
 
-    textarea::placeholder {
-      color: #64748b;
+    #mainChartWrap {
+      position: relative;
+      height: 620px;
+      border-radius: 16px;
+      overflow: hidden;
+    }
+
+    #mainChart {
+      width: 100%;
+      height: 100%;
+    }
+
+    .chart-overlay-layer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 20;
+    }
+
+    .overlay-label {
+      position: absolute;
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 6px;
+      color: white;
+      background: rgba(15, 23, 42, 0.9);
+      white-space: nowrap;
+    }
+
+    .overlay-rect {
+      position: absolute;
+      border: 1px solid transparent;
+      border-radius: 4px;
+    }
+
+    .overlay-line {
+      position: absolute;
+      height: 2px;
+      opacity: 0.9;
+    }
+
+    .fullscreen-chart {
+      position: fixed !important;
+      inset: 12px !important;
+      width: auto !important;
+      height: auto !important;
+      z-index: 9999 !important;
     }
   </style>
 </head>
@@ -68,7 +94,7 @@
       <div>
         <h1 class="text-2xl font-bold tracking-tight">Advanced Charts</h1>
         <p class="text-sm text-slate-400">
-          Manual analysis, macro context, and visual confirmation for AI trading decisions
+          Signals, TP/SL levels, fullscreen chart, and live smart money annotations
         </p>
       </div>
 
@@ -83,442 +109,339 @@
 
   <main class="max-w-7xl mx-auto px-4 py-6 space-y-6">
 
-    <section class="glass rounded-2xl p-5">
+    <section class="glass rounded-2xl p-4">
       <div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
-        <div class="bg-slate-900 border border-slate-700 rounded-xl p-4">
-          <p class="text-xs text-slate-400">Page Role</p>
-          <p class="text-lg font-semibold mt-1">Manual Analysis</p>
+        <div>
+          <label class="block text-xs text-slate-400 mb-2">Symbol</label>
+          <select id="symbolSelect" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-3">
+            <option value="BTCUSDT">BTCUSDT</option>
+            <option value="ETHUSDT">ETHUSDT</option>
+          </select>
         </div>
 
-        <div class="bg-slate-900 border border-slate-700 rounded-xl p-4">
-          <p class="text-xs text-slate-400">Primary Use</p>
-          <p class="text-lg font-semibold mt-1">Visual Confirmation</p>
+        <div class="lg:col-span-2">
+          <label class="block text-xs text-slate-400 mb-2">Timeframe</label>
+          <div class="flex flex-wrap gap-2">
+            <button class="tf-btn active px-4 py-2 rounded-xl border border-slate-700 bg-slate-900 text-sm" data-interval="1m">1m</button>
+            <button class="tf-btn px-4 py-2 rounded-xl border border-slate-700 bg-slate-900 text-sm" data-interval="5m">5m</button>
+            <button class="tf-btn px-4 py-2 rounded-xl border border-slate-700 bg-slate-900 text-sm" data-interval="15m">15m</button>
+            <button class="tf-btn px-4 py-2 rounded-xl border border-slate-700 bg-slate-900 text-sm" data-interval="1h">1h</button>
+          </div>
         </div>
 
-        <div class="bg-slate-900 border border-slate-700 rounded-xl p-4">
-          <p class="text-xs text-slate-400">Supports</p>
-          <p class="text-lg font-semibold mt-1">AI Trade Decisions</p>
-        </div>
-
-        <div class="bg-slate-900 border border-slate-700 rounded-xl p-4">
-          <p class="text-xs text-slate-400">Focus</p>
-          <p class="text-lg font-semibold mt-1">Correlation & Context</p>
+        <div class="flex items-end gap-2">
+          <button id="refreshBtn" class="flex-1 px-4 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 font-semibold">
+            Refresh
+          </button>
+          <button id="fullscreenBtn" class="px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 font-semibold">
+            Fullscreen
+          </button>
         </div>
       </div>
     </section>
 
     <section class="grid grid-cols-1 xl:grid-cols-4 gap-6">
-
       <div class="xl:col-span-3 space-y-6">
-
         <section class="glass rounded-2xl p-4">
-          <div class="flex flex-wrap gap-2">
-            <button class="tab-btn active px-4 py-2 rounded-xl border border-slate-700 bg-slate-900 text-sm" data-tab="commodities">
-              Commodities
-            </button>
-            <button class="tab-btn px-4 py-2 rounded-xl border border-slate-700 bg-slate-900 text-sm" data-tab="currencies">
-              Currencies
-            </button>
-            <button class="tab-btn px-4 py-2 rounded-xl border border-slate-700 bg-slate-900 text-sm" data-tab="indices">
-              Indices
-            </button>
-          </div>
-        </section>
-
-        <section id="tab-commodities" class="tab-content space-y-6">
-          <div class="glass rounded-2xl p-4">
-            <div class="flex items-center justify-between mb-4">
-              <div>
-                <h3 class="text-xl font-semibold">Commodities</h3>
-                <p class="text-sm text-slate-400">Gold, silver, oil and commodity sentiment.</p>
-              </div>
-              <div class="pill text-slate-300">Macro confirmation</div>
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <h3 class="text-xl font-semibold">Execution Chart</h3>
+              <p class="text-sm text-slate-400">Candles, buy/sell markers, TP/SL, BOS, order blocks, FVGs</p>
             </div>
-
-            <div class="widget-wrap rounded-xl overflow-hidden">
-              <div class="tradingview-widget-container h-[520px]">
-                <div id="tv-commodities-main" class="h-full"></div>
-              </div>
-            </div>
+            <div class="pill" id="chartStatusPill">Live</div>
           </div>
 
-          <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <div class="glass rounded-2xl p-4 mini-widget">
-              <h4 class="font-semibold mb-3">Gold</h4>
-              <div class="tradingview-widget-container h-[260px]">
-                <div id="tv-gold" class="h-full"></div>
-              </div>
-            </div>
-
-            <div class="glass rounded-2xl p-4 mini-widget">
-              <h4 class="font-semibold mb-3">Silver</h4>
-              <div class="tradingview-widget-container h-[260px]">
-                <div id="tv-silver" class="h-full"></div>
-              </div>
-            </div>
-
-            <div class="glass rounded-2xl p-4 mini-widget">
-              <h4 class="font-semibold mb-3">Crude Oil</h4>
-              <div class="tradingview-widget-container h-[260px]">
-                <div id="tv-oil" class="h-full"></div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section id="tab-currencies" class="tab-content hidden space-y-6">
-          <div class="glass rounded-2xl p-4">
-            <div class="flex items-center justify-between mb-4">
-              <div>
-                <h3 class="text-xl font-semibold">Currencies</h3>
-                <p class="text-sm text-slate-400">Major FX pairs for dollar strength and directional bias.</p>
-              </div>
-              <div class="pill text-slate-300">FX alignment</div>
-            </div>
-
-            <div class="widget-wrap rounded-xl overflow-hidden">
-              <div class="tradingview-widget-container h-[520px]">
-                <div id="tv-currencies-main" class="h-full"></div>
-              </div>
-            </div>
-          </div>
-
-          <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <div class="glass rounded-2xl p-4 mini-widget">
-              <h4 class="font-semibold mb-3">EUR/USD</h4>
-              <div class="tradingview-widget-container h-[260px]">
-                <div id="tv-eurusd" class="h-full"></div>
-              </div>
-            </div>
-
-            <div class="glass rounded-2xl p-4 mini-widget">
-              <h4 class="font-semibold mb-3">GBP/USD</h4>
-              <div class="tradingview-widget-container h-[260px]">
-                <div id="tv-gbpusd" class="h-full"></div>
-              </div>
-            </div>
-
-            <div class="glass rounded-2xl p-4 mini-widget">
-              <h4 class="font-semibold mb-3">USD/JPY</h4>
-              <div class="tradingview-widget-container h-[260px]">
-                <div id="tv-usdjpy" class="h-full"></div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section id="tab-indices" class="tab-content hidden space-y-6">
-          <div class="glass rounded-2xl p-4">
-            <div class="flex items-center justify-between mb-4">
-              <div>
-                <h3 class="text-xl font-semibold">Indices</h3>
-                <p class="text-sm text-slate-400">Risk-on / risk-off context and broad market sentiment.</p>
-              </div>
-              <div class="pill text-slate-300">Risk sentiment</div>
-            </div>
-
-            <div class="widget-wrap rounded-xl overflow-hidden">
-              <div class="tradingview-widget-container h-[520px]">
-                <div id="tv-indices-main" class="h-full"></div>
-              </div>
-            </div>
-          </div>
-
-          <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <div class="glass rounded-2xl p-4 mini-widget">
-              <h4 class="font-semibold mb-3">S&amp;P 500</h4>
-              <div class="tradingview-widget-container h-[260px]">
-                <div id="tv-spx" class="h-full"></div>
-              </div>
-            </div>
-
-            <div class="glass rounded-2xl p-4 mini-widget">
-              <h4 class="font-semibold mb-3">NASDAQ 100</h4>
-              <div class="tradingview-widget-container h-[260px]">
-                <div id="tv-nasdaq" class="h-full"></div>
-              </div>
-            </div>
-
-            <div class="glass rounded-2xl p-4 mini-widget">
-              <h4 class="font-semibold mb-3">Dow Jones</h4>
-              <div class="tradingview-widget-container h-[260px]">
-                <div id="tv-dji" class="h-full"></div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section class="glass rounded-2xl p-5">
-          <h3 class="text-lg font-semibold mb-4">Manual Confirmation Checklist</h3>
-
-          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-            <div class="bg-slate-900 border border-slate-700 rounded-xl p-4">
-              <p class="font-semibold mb-2">Trend</p>
-              <p class="text-sm text-slate-400">Does higher timeframe structure agree with the setup?</p>
-            </div>
-
-            <div class="bg-slate-900 border border-slate-700 rounded-xl p-4">
-              <p class="font-semibold mb-2">Momentum</p>
-              <p class="text-sm text-slate-400">Are RSI / MACD / price action aligned?</p>
-            </div>
-
-            <div class="bg-slate-900 border border-slate-700 rounded-xl p-4">
-              <p class="font-semibold mb-2">Correlation</p>
-              <p class="text-sm text-slate-400">Do related markets support the same trade idea?</p>
-            </div>
-
-            <div class="bg-slate-900 border border-slate-700 rounded-xl p-4">
-              <p class="font-semibold mb-2">Approval</p>
-              <p class="text-sm text-slate-400">Would you manually approve this before execution?</p>
-            </div>
+          <div id="mainChartWrap">
+            <div id="mainChart"></div>
+            <div id="annotationLayer" class="chart-overlay-layer"></div>
           </div>
         </section>
       </div>
 
       <aside class="space-y-6">
-
         <section class="glass rounded-2xl p-4">
-          <div class="flex items-center justify-between mb-4">
-            <h3 class="text-lg font-semibold">AI Confirmation</h3>
-            <span class="pill text-blue-300">Live Context</span>
-          </div>
-
-          <div class="space-y-3">
-            <div class="bg-slate-900 border border-slate-700 rounded-xl p-3">
-              <p class="text-xs text-slate-400">Selected Category</p>
-              <p id="selectedCategory" class="text-base font-semibold">Loading...</p>
-            </div>
-
-            <div class="bg-slate-900 border border-slate-700 rounded-xl p-3">
-              <p class="text-xs text-slate-400">AI Bias</p>
-              <p id="aiBias" class="text-base font-semibold">Loading...</p>
-            </div>
-
-            <div class="bg-slate-900 border border-slate-700 rounded-xl p-3">
-              <p class="text-xs text-slate-400">Signal Direction</p>
-              <p id="signalDirection" class="text-base font-semibold status-hold">Loading...</p>
-            </div>
-
-            <div class="bg-slate-900 border border-slate-700 rounded-xl p-3">
-              <p class="text-xs text-slate-400">Market Regime</p>
-              <p id="marketRegime" class="text-base font-semibold">Loading...</p>
-            </div>
-
-            <div class="bg-slate-900 border border-slate-700 rounded-xl p-3">
-              <div class="flex items-center justify-between mb-2">
-                <p class="text-xs text-slate-400">Confidence</p>
-                <p id="confidenceText" class="text-sm font-semibold">--%</p>
-              </div>
-              <div class="w-full bg-slate-800 rounded-full h-3">
-                <div id="confidenceBar" class="bg-blue-500 h-3 rounded-full" style="width: 0%;"></div>
-              </div>
-            </div>
+          <h3 class="text-lg font-semibold mb-4">Latest Trade Levels</h3>
+          <div id="tradeLevelsBox" class="space-y-3">
+            <div class="text-sm text-slate-400">Loading...</div>
           </div>
         </section>
 
         <section class="glass rounded-2xl p-4">
-          <h3 class="text-lg font-semibold mb-4">Cross-Market Read</h3>
-
-          <div class="space-y-3">
-            <div class="bg-slate-900 border border-slate-700 rounded-xl p-3">
-              <p class="text-xs text-slate-400">Dollar / FX</p>
-              <p id="readFx" class="text-sm font-semibold">Loading...</p>
-            </div>
-
-            <div class="bg-slate-900 border border-slate-700 rounded-xl p-3">
-              <p class="text-xs text-slate-400">Commodities</p>
-              <p id="readCommodities" class="text-sm font-semibold">Loading...</p>
-            </div>
-
-            <div class="bg-slate-900 border border-slate-700 rounded-xl p-3">
-              <p class="text-xs text-slate-400">Indices</p>
-              <p id="readIndices" class="text-sm font-semibold">Loading...</p>
-            </div>
+          <h3 class="text-lg font-semibold mb-4">SMC Annotation Types</h3>
+          <div class="space-y-2 text-sm">
+            <div class="bg-slate-900 border border-slate-700 rounded-xl p-3">Blue lines = BOS / structure</div>
+            <div class="bg-slate-900 border border-slate-700 rounded-xl p-3">Amber lines = liquidity zones</div>
+            <div class="bg-slate-900 border border-slate-700 rounded-xl p-3">Green rectangles = order blocks</div>
+            <div class="bg-slate-900 border border-slate-700 rounded-xl p-3">Red rectangles = fair value gaps</div>
           </div>
-        </section>
-
-        <section class="glass rounded-2xl p-4">
-          <h3 class="text-lg font-semibold mb-4">Trade Approval</h3>
-
-          <div class="space-y-3">
-            <label class="flex items-center gap-3 bg-slate-900 border border-slate-700 rounded-xl p-3">
-              <input type="checkbox" class="w-4 h-4 accent-blue-500" />
-              <span class="text-sm">Trend confirms setup</span>
-            </label>
-
-            <label class="flex items-center gap-3 bg-slate-900 border border-slate-700 rounded-xl p-3">
-              <input type="checkbox" class="w-4 h-4 accent-blue-500" />
-              <span class="text-sm">Momentum agrees</span>
-            </label>
-
-            <label class="flex items-center gap-3 bg-slate-900 border border-slate-700 rounded-xl p-3">
-              <input type="checkbox" class="w-4 h-4 accent-blue-500" />
-              <span class="text-sm">Cross-market confirmation present</span>
-            </label>
-
-            <label class="flex items-center gap-3 bg-slate-900 border border-slate-700 rounded-xl p-3">
-              <input type="checkbox" class="w-4 h-4 accent-blue-500" />
-              <span class="text-sm">Manual approval granted</span>
-            </label>
-          </div>
-        </section>
-
-        <section class="glass rounded-2xl p-4">
-          <h3 class="text-lg font-semibold mb-4">Analysis Notes</h3>
-          <textarea
-            class="w-full h-40 bg-slate-900 border border-slate-700 rounded-xl p-3 text-sm text-white"
-            placeholder="Write your chart observations, confirmations, invalidation points, and macro notes here..."
-          ></textarea>
         </section>
       </aside>
     </section>
   </main>
 
-  <script src="https://s3.tradingview.com/tv.js"></script>
   <script>
-    function createAdvancedChart(containerId, symbol, interval = "60") {
-      new TradingView.widget({
-        autosize: true,
-        symbol: symbol,
-        interval: interval,
-        timezone: "Etc/UTC",
-        theme: "dark",
-        style: "1",
-        locale: "en",
-        toolbar_bg: "#0f172a",
-        enable_publishing: false,
-        allow_symbol_change: true,
-        hide_side_toolbar: false,
-        withdateranges: true,
-        details: true,
-        hotlist: false,
-        calendar: false,
-        studies: [
-          "RSI@tv-basicstudies",
-          "MACD@tv-basicstudies",
-          "Volume@tv-basicstudies"
-        ],
-        container_id: containerId
+    let currentSymbol = "BTCUSDT";
+    let currentInterval = "1m";
+    let chart;
+    let candleSeries;
+    let lineSeriesList = [];
+    let candleData = [];
+
+    const chartWrap = document.getElementById("mainChartWrap");
+    const annotationLayer = document.getElementById("annotationLayer");
+    const tradeLevelsBox = document.getElementById("tradeLevelsBox");
+
+    function createMainChart() {
+      chart = LightweightCharts.createChart(document.getElementById("mainChart"), {
+        width: chartWrap.clientWidth,
+        height: chartWrap.clientHeight,
+        layout: {
+          background: { color: "#0f172a" },
+          textColor: "#cbd5e1"
+        },
+        grid: {
+          vertLines: { color: "rgba(255,255,255,0.05)" },
+          horzLines: { color: "rgba(255,255,255,0.05)" }
+        },
+        crosshair: {
+          mode: LightweightCharts.CrosshairMode.Normal
+        },
+        rightPriceScale: {
+          borderColor: "rgba(255,255,255,0.08)"
+        },
+        timeScale: {
+          borderColor: "rgba(255,255,255,0.08)",
+          timeVisible: true,
+          secondsVisible: false
+        }
+      });
+
+      candleSeries = chart.addCandlestickSeries({
+        upColor: "#22c55e",
+        downColor: "#ef4444",
+        borderVisible: false,
+        wickUpColor: "#22c55e",
+        wickDownColor: "#ef4444"
+      });
+
+      window.addEventListener("resize", () => {
+        chart.applyOptions({
+          width: chartWrap.clientWidth,
+          height: chartWrap.clientHeight
+        });
+        drawHtmlAnnotations(window.currentAnnotations || []);
+      });
+
+      chart.timeScale().subscribeVisibleTimeRangeChange(() => {
+        drawHtmlAnnotations(window.currentAnnotations || []);
       });
     }
 
-    function createMiniChart(containerId, symbol, interval = "240") {
-      new TradingView.widget({
-        autosize: true,
-        symbol: symbol,
-        interval: interval,
-        timezone: "Etc/UTC",
-        theme: "dark",
-        style: "1",
-        locale: "en",
-        toolbar_bg: "#0f172a",
-        enable_publishing: false,
-        allow_symbol_change: false,
-        hide_side_toolbar: true,
-        hide_top_toolbar: true,
-        withdateranges: false,
-        details: false,
-        hotlist: false,
-        calendar: false,
-        studies: ["RSI@tv-basicstudies"],
-        container_id: containerId
+    function clearLineSeries() {
+      lineSeriesList.forEach(series => {
+        try {
+          chart.removeSeries(series);
+        } catch (e) {}
       });
+      lineSeriesList = [];
     }
 
-    createAdvancedChart("tv-commodities-main", "TVC:GOLD", "60");
-    createAdvancedChart("tv-currencies-main", "FX:EURUSD", "60");
-    createAdvancedChart("tv-indices-main", "FOREXCOM:SPXUSD", "60");
+    function addHorizontalLine(price, color) {
+      if (!candleData.length) return;
 
-    createMiniChart("tv-gold", "TVC:GOLD", "240");
-    createMiniChart("tv-silver", "TVC:SILVER", "240");
-    createMiniChart("tv-oil", "TVC:USOIL", "240");
+      const series = chart.addLineSeries({
+        color,
+        lineWidth: 2,
+        lastValueVisible: true,
+        priceLineVisible: false,
+        crosshairMarkerVisible: false
+      });
 
-    createMiniChart("tv-eurusd", "FX:EURUSD", "240");
-    createMiniChart("tv-gbpusd", "FX:GBPUSD", "240");
-    createMiniChart("tv-usdjpy", "FX:USDJPY", "240");
+      const first = candleData[0].time;
+      const last = candleData[candleData.length - 1].time;
 
-    createMiniChart("tv-spx", "FOREXCOM:SPXUSD", "240");
-    createMiniChart("tv-nasdaq", "FOREXCOM:NSXUSD", "240");
-    createMiniChart("tv-dji", "FOREXCOM:DJI", "240");
+      series.setData([
+        { time: first, value: price },
+        { time: last, value: price }
+      ]);
 
-    const tabButtons = document.querySelectorAll(".tab-btn");
-    const tabContents = document.querySelectorAll(".tab-content");
-
-    const selectedCategory = document.getElementById("selectedCategory");
-    const aiBias = document.getElementById("aiBias");
-    const signalDirection = document.getElementById("signalDirection");
-    const marketRegime = document.getElementById("marketRegime");
-    const confidenceText = document.getElementById("confidenceText");
-    const confidenceBar = document.getElementById("confidenceBar");
-    const readFx = document.getElementById("readFx");
-    const readCommodities = document.getElementById("readCommodities");
-    const readIndices = document.getElementById("readIndices");
-
-    function applySignalClass(signal) {
-      signalDirection.classList.remove("status-buy", "status-sell", "status-hold");
-
-      if (signal === "BUY") {
-        signalDirection.classList.add("status-buy");
-      } else if (signal === "SELL") {
-        signalDirection.classList.add("status-sell");
-      } else {
-        signalDirection.classList.add("status-hold");
-      }
+      lineSeriesList.push(series);
     }
 
-    async function updateSidebar(tab) {
-      try {
-        const res = await fetch(`/chart-confirmation?tab=${tab}`);
+    function clearHtmlAnnotations() {
+      annotationLayer.innerHTML = "";
+    }
 
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}`);
+    function drawHtmlAnnotations(annotations) {
+      clearHtmlAnnotations();
+
+      if (!chart || !annotations || !annotations.length) return;
+
+      const timeScale = chart.timeScale();
+
+      annotations.forEach(item => {
+        if (item.type === "line") {
+          const y = candleSeries.priceToCoordinate(item.price);
+          const x1 = timeScale.timeToCoordinate(item.startTime);
+          const x2 = timeScale.timeToCoordinate(item.endTime);
+
+          if (y == null || x1 == null || x2 == null) return;
+
+          const line = document.createElement("div");
+          line.className = "overlay-line";
+          line.style.left = `${Math.min(x1, x2)}px`;
+          line.style.top = `${y}px`;
+          line.style.width = `${Math.abs(x2 - x1)}px`;
+          line.style.background = item.color || "#3b82f6";
+          annotationLayer.appendChild(line);
+
+          const label = document.createElement("div");
+          label.className = "overlay-label";
+          label.style.left = `${Math.min(x1, x2)}px`;
+          label.style.top = `${Math.max(0, y - 22)}px`;
+          label.textContent = item.label || "Line";
+          annotationLayer.appendChild(label);
         }
 
-        const state = await res.json();
+        if (item.type === "rectangle") {
+          const x1 = timeScale.timeToCoordinate(item.startTime);
+          const x2 = timeScale.timeToCoordinate(item.endTime);
+          const yTop = candleSeries.priceToCoordinate(item.top);
+          const yBottom = candleSeries.priceToCoordinate(item.bottom);
 
-        selectedCategory.textContent = state.category || "Unknown";
-        aiBias.textContent = state.bias || "Neutral";
-        signalDirection.textContent = state.signal || "HOLD";
-        marketRegime.textContent = state.regime || "Unknown";
-        confidenceText.textContent = `${state.confidence ?? 50}%`;
-        confidenceBar.style.width = `${state.confidence ?? 50}%`;
-        readFx.textContent = state.fx || "No data";
-        readCommodities.textContent = state.commodities || "No data";
-        readIndices.textContent = state.indices || "No data";
+          if (x1 == null || x2 == null || yTop == null || yBottom == null) return;
 
-        applySignalClass(state.signal || "HOLD");
+          const rect = document.createElement("div");
+          rect.className = "overlay-rect";
+          rect.style.left = `${Math.min(x1, x2)}px`;
+          rect.style.top = `${Math.min(yTop, yBottom)}px`;
+          rect.style.width = `${Math.abs(x2 - x1)}px`;
+          rect.style.height = `${Math.abs(yBottom - yTop)}px`;
+          rect.style.background = item.color || "rgba(34,197,94,0.18)";
+          rect.style.borderColor = item.borderColor || "rgba(34,197,94,0.7)";
+          annotationLayer.appendChild(rect);
+
+          const label = document.createElement("div");
+          label.className = "overlay-label";
+          label.style.left = `${Math.min(x1, x2)}px`;
+          label.style.top = `${Math.max(0, Math.min(yTop, yBottom) - 22)}px`;
+          label.textContent = item.label || "Zone";
+          annotationLayer.appendChild(label);
+        }
+      });
+    }
+
+    function renderTradeLevels(levels) {
+      if (!levels || !levels.length) {
+        tradeLevelsBox.innerHTML = `<div class="text-sm text-slate-400">No recent signals found.</div>`;
+        return;
+      }
+
+      tradeLevelsBox.innerHTML = levels.slice().reverse().map(level => `
+        <div class="bg-slate-900 border border-slate-700 rounded-xl p-3">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs text-slate-400">Signal</span>
+            <span class="text-sm font-bold ${level.side === 'BUY' ? 'text-green-400' : 'text-red-400'}">${level.side}</span>
+          </div>
+          <div class="text-sm">Entry: <span class="font-semibold">${level.entry}</span></div>
+          <div class="text-sm">SL: <span class="font-semibold">${level.sl}</span></div>
+          <div class="text-sm">TP: <span class="font-semibold">${level.tp}</span></div>
+        </div>
+      `).join("");
+    }
+
+    async function loadChart() {
+      const candleRes = await fetch(`/api/chart-candles?symbol=${currentSymbol}&interval=${currentInterval}&limit=200`);
+      const overlayRes = await fetch(`/api/chart-overlays?symbol=${currentSymbol}&interval=${currentInterval}&limit=200`);
+
+      if (!candleRes.ok) throw new Error(`Candles HTTP ${candleRes.status}`);
+      if (!overlayRes.ok) throw new Error(`Overlays HTTP ${overlayRes.status}`);
+
+      const candles = await candleRes.json();
+      const overlays = await overlayRes.json();
+
+      candleData = candles;
+      candleSeries.setData(candles);
+
+      if (typeof candleSeries.setMarkers === "function") {
+        candleSeries.setMarkers(overlays.markers || []);
+      }
+
+      clearLineSeries();
+
+      (overlays.trade_levels || []).forEach(level => {
+        addHorizontalLine(level.entry, level.side === "BUY" ? "#22c55e" : "#ef4444");
+        addHorizontalLine(level.sl, "#f59e0b");
+        addHorizontalLine(level.tp, "#3b82f6");
+      });
+
+      renderTradeLevels(overlays.trade_levels || []);
+      window.currentAnnotations = overlays.annotations || [];
+      drawHtmlAnnotations(window.currentAnnotations);
+
+      chart.timeScale().fitContent();
+    }
+
+    async function refreshAll() {
+      try {
+        await loadChart();
       } catch (err) {
-        console.error("Failed to load chart confirmation:", err);
-
-        selectedCategory.textContent = "Unavailable";
-        aiBias.textContent = "Neutral";
-        signalDirection.textContent = "HOLD";
-        marketRegime.textContent = "Unknown";
-        confidenceText.textContent = "50%";
-        confidenceBar.style.width = "50%";
-        readFx.textContent = "No data";
-        readCommodities.textContent = "No data";
-        readIndices.textContent = "No data";
-
-        applySignalClass("HOLD");
+        console.error(err);
+        tradeLevelsBox.innerHTML = `<div class="text-sm text-red-400">Failed to load chart data.</div>`;
       }
     }
 
-    tabButtons.forEach(button => {
-      button.addEventListener("click", () => {
-        const tab = button.dataset.tab;
+    document.getElementById("symbolSelect").addEventListener("change", (e) => {
+      currentSymbol = e.target.value;
+      refreshAll();
+    });
 
-        tabButtons.forEach(btn => btn.classList.remove("active"));
-        button.classList.add("active");
-
-        tabContents.forEach(content => content.classList.add("hidden"));
-        document.getElementById(`tab-${tab}`).classList.remove("hidden");
-
-        updateSidebar(tab);
+    document.querySelectorAll(".tf-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".tf-btn").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        currentInterval = btn.dataset.interval;
+        refreshAll();
       });
     });
 
-    updateSidebar("commodities");
+    document.getElementById("refreshBtn").addEventListener("click", refreshAll);
+
+    document.getElementById("fullscreenBtn").addEventListener("click", async () => {
+      if (!document.fullscreenElement) {
+        await chartWrap.requestFullscreen().catch(() => {});
+        chartWrap.classList.add("fullscreen-chart");
+      } else {
+        await document.exitFullscreen().catch(() => {});
+        chartWrap.classList.remove("fullscreen-chart");
+      }
+
+      setTimeout(() => {
+        chart.applyOptions({
+          width: chartWrap.clientWidth,
+          height: chartWrap.clientHeight
+        });
+        drawHtmlAnnotations(window.currentAnnotations || []);
+      }, 200);
+    });
+
+    document.addEventListener("fullscreenchange", () => {
+      if (!document.fullscreenElement) {
+        chartWrap.classList.remove("fullscreen-chart");
+      }
+
+      setTimeout(() => {
+        chart.applyOptions({
+          width: chartWrap.clientWidth,
+          height: chartWrap.clientHeight
+        });
+        drawHtmlAnnotations(window.currentAnnotations || []);
+      }, 200);
+    });
+
+    createMainChart();
+    refreshAll();
+    setInterval(refreshAll, 15000);
   </script>
 </body>
 </html>
