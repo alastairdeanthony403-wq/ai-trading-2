@@ -104,6 +104,32 @@ def fetch_binance(symbol, interval="1m", limit=100):
         return None
 
 
+def fetch_binance_raw(symbol="BTCUSDT", interval="5m", limit=500):
+    try:
+        if not symbol or not symbol.endswith("USDT"):
+            return []
+
+        url = "https://api.binance.com/api/v3/klines"
+        params = {
+            "symbol": symbol,
+            "interval": interval,
+            "limit": limit
+        }
+
+        response = requests.get(url, params=params, timeout=15)
+        if response.status_code != 200:
+            return []
+
+        data = response.json()
+        if not isinstance(data, list):
+            return []
+
+        return data
+
+    except Exception:
+        return []
+
+
 # ---------------- SIGNAL / ANALYSIS ----------------
 def generate_signal(df):
     if df is None or len(df) < 2:
@@ -501,6 +527,180 @@ def get_chart_signals(symbol="BTCUSDT", interval="1m", limit=200):
     }
 
 
+# ---------------- BACKTESTER ----------------
+def simple_signal_logic(candles, strategy="basic"):
+    signals = []
+
+    if not candles or len(candles) < 21:
+        return signals
+
+    for i in range(20, len(candles)):
+        close_price = float(candles[i][4])
+        open_price = float(candles[i][1])
+        high_price = float(candles[i][2])
+        low_price = float(candles[i][3])
+
+        prev_close = float(candles[i - 1][4])
+        prev2_close = float(candles[i - 2][4])
+
+        time_str = datetime.utcfromtimestamp(candles[i][0] / 1000).strftime("%Y-%m-%d %H:%M:%S")
+
+        signal_type = None
+        stop_loss = None
+        take_profit = None
+
+        if strategy == "basic":
+            if close_price > prev_close > prev2_close:
+                signal_type = "BUY"
+                stop_loss = low_price * 0.995
+                take_profit = close_price * 1.01
+            elif close_price < prev_close < prev2_close:
+                signal_type = "SELL"
+                stop_loss = high_price * 1.005
+                take_profit = close_price * 0.99
+
+        elif strategy == "smart_money":
+            candle_body = abs(close_price - open_price)
+            candle_range = high_price - low_price if (high_price - low_price) != 0 else 1
+
+            if close_price > open_price and candle_body > candle_range * 0.6 and close_price > prev_close:
+                signal_type = "BUY"
+                stop_loss = low_price
+                take_profit = close_price + (close_price - low_price) * 2
+
+            elif close_price < open_price and candle_body > candle_range * 0.6 and close_price < prev_close:
+                signal_type = "SELL"
+                stop_loss = high_price
+                take_profit = close_price - (high_price - close_price) * 2
+
+        elif strategy == "ema_rsi":
+            closes = [float(c[4]) for c in candles[max(0, i - 14):i + 1]]
+            avg_close = sum(closes) / len(closes) if closes else close_price
+
+            if close_price > avg_close and prev_close < avg_close:
+                signal_type = "BUY"
+                stop_loss = low_price * 0.997
+                take_profit = close_price * 1.012
+
+            elif close_price < avg_close and prev_close > avg_close:
+                signal_type = "SELL"
+                stop_loss = high_price * 1.003
+                take_profit = close_price * 0.988
+
+        if signal_type and stop_loss is not None and take_profit is not None:
+            signals.append({
+                "index": i,
+                "type": signal_type,
+                "price": close_price,
+                "time": time_str,
+                "stop_loss": round(stop_loss, 2),
+                "take_profit": round(take_profit, 2)
+            })
+
+    return signals
+
+
+def run_backtest_engine(candles, signals, starting_balance=1000):
+    balance = float(starting_balance)
+    trades = []
+
+    if not candles or not signals:
+        summary = {
+            "starting_balance": round(starting_balance, 2),
+            "final_balance": round(balance, 2),
+            "net_pnl": 0.0,
+            "total_trades": 0,
+            "wins": 0,
+            "losses": 0,
+            "best_trade": 0.0,
+            "win_rate": 0.0
+        }
+        return summary, trades
+
+    for signal in signals:
+        entry_index = signal["index"]
+        entry_price = float(signal["price"])
+        side = signal["type"]
+        stop_loss = float(signal["stop_loss"])
+        take_profit = float(signal["take_profit"])
+        entry_time = signal["time"]
+
+        exit_price = entry_price
+        exit_time = entry_time
+        pnl = 0.0
+
+        max_forward_index = min(entry_index + 30, len(candles) - 1)
+
+        for j in range(entry_index + 1, max_forward_index + 1):
+            candle = candles[j]
+            high = float(candle[2])
+            low = float(candle[3])
+            close = float(candle[4])
+            candle_time = datetime.utcfromtimestamp(candle[0] / 1000).strftime("%Y-%m-%d %H:%M:%S")
+
+            if side == "BUY":
+                if low <= stop_loss:
+                    exit_price = stop_loss
+                    exit_time = candle_time
+                    pnl = stop_loss - entry_price
+                    break
+                elif high >= take_profit:
+                    exit_price = take_profit
+                    exit_time = candle_time
+                    pnl = take_profit - entry_price
+                    break
+
+            elif side == "SELL":
+                if high >= stop_loss:
+                    exit_price = stop_loss
+                    exit_time = candle_time
+                    pnl = entry_price - stop_loss
+                    break
+                elif low <= take_profit:
+                    exit_price = take_profit
+                    exit_time = candle_time
+                    pnl = entry_price - take_profit
+                    break
+
+            if j == max_forward_index:
+                exit_price = close
+                exit_time = candle_time
+                pnl = (exit_price - entry_price) if side == "BUY" else (entry_price - exit_price)
+
+        balance += pnl
+
+        trades.append({
+            "side": side,
+            "entry_price": round(entry_price, 2),
+            "exit_price": round(exit_price, 2),
+            "stop_loss": round(stop_loss, 2),
+            "take_profit": round(take_profit, 2),
+            "entry_time": entry_time,
+            "exit_time": exit_time,
+            "pnl": round(pnl, 2)
+        })
+
+    total_trades = len(trades)
+    wins = len([t for t in trades if t["pnl"] > 0])
+    losses = len([t for t in trades if t["pnl"] <= 0])
+    net_pnl = round(sum(t["pnl"] for t in trades), 2)
+    best_trade = round(max([t["pnl"] for t in trades], default=0), 2)
+    win_rate = round((wins / total_trades) * 100, 2) if total_trades > 0 else 0.0
+
+    summary = {
+        "starting_balance": round(starting_balance, 2),
+        "final_balance": round(balance, 2),
+        "net_pnl": net_pnl,
+        "total_trades": total_trades,
+        "wins": wins,
+        "losses": losses,
+        "best_trade": best_trade,
+        "win_rate": win_rate
+    }
+
+    return summary, trades
+
+
 # ---------------- API ROUTES ----------------
 @app.route("/live_trades")
 def live_trades():
@@ -629,6 +829,44 @@ def api_chart_overlays():
     return jsonify(data)
 
 
+@app.route("/api/backtest", methods=["POST"])
+def api_backtest():
+    try:
+        data = request.get_json(force=True)
+
+        symbol = str(data.get("symbol", "BTCUSDT")).upper()
+        interval = str(data.get("interval", "5m"))
+        limit = int(data.get("limit", 500))
+        strategy = str(data.get("strategy", "basic"))
+        starting_balance = float(data.get("starting_balance", 1000))
+
+        if limit < 50:
+            limit = 50
+        if limit > 1500:
+            limit = 1500
+
+        candles = fetch_binance_raw(symbol=symbol, interval=interval, limit=limit)
+
+        if not candles:
+            return jsonify({"error": "Could not fetch historical candle data"}), 500
+
+        signals = simple_signal_logic(candles, strategy=strategy)
+        summary, trades = run_backtest_engine(
+            candles,
+            signals,
+            starting_balance=starting_balance
+        )
+
+        return jsonify({
+            "summary": summary,
+            "signals": signals,
+            "trades": trades
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ---------------- PAGE ROUTES ----------------
 @app.route("/")
 def home():
@@ -648,6 +886,11 @@ def analytics():
 @app.route("/realtime")
 def realtime():
     return render_template("realtime.html")
+
+
+@app.route("/backtester")
+def backtester():
+    return render_template("backtester.html")
 
 
 # ---------------- RUN ----------------
