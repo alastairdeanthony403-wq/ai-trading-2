@@ -63,7 +63,6 @@
 </head>
 <body class="min-h-screen">
 
-  <!-- Header -->
   <header class="border-b border-slate-800 bg-slate-950/90 sticky top-0 z-50">
     <div class="max-w-7xl mx-auto px-4 py-4 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
       <div>
@@ -84,7 +83,6 @@
 
   <main class="max-w-7xl mx-auto px-4 py-6 space-y-6">
 
-    <!-- Top Overview -->
     <section class="glass rounded-2xl p-5">
       <div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
         <div class="bg-slate-900 border border-slate-700 rounded-xl p-4">
@@ -109,13 +107,10 @@
       </div>
     </section>
 
-    <!-- Main Layout -->
     <section class="grid grid-cols-1 xl:grid-cols-4 gap-6">
 
-      <!-- Left Main -->
       <div class="xl:col-span-3 space-y-6">
 
-        <!-- Tabs -->
         <section class="glass rounded-2xl p-4">
           <div class="flex flex-wrap gap-2">
             <button class="tab-btn active px-4 py-2 rounded-xl border border-slate-700 bg-slate-900 text-sm" data-tab="commodities">
@@ -130,7 +125,6 @@
           </div>
         </section>
 
-        <!-- Commodities -->
         <section id="tab-commodities" class="tab-content space-y-6">
           <div class="glass rounded-2xl p-4">
             <div class="flex items-center justify-between mb-4">
@@ -172,7 +166,6 @@
           </div>
         </section>
 
-        <!-- Currencies -->
         <section id="tab-currencies" class="tab-content hidden space-y-6">
           <div class="glass rounded-2xl p-4">
             <div class="flex items-center justify-between mb-4">
@@ -214,7 +207,6 @@
           </div>
         </section>
 
-        <!-- Indices -->
         <section id="tab-indices" class="tab-content hidden space-y-6">
           <div class="glass rounded-2xl p-4">
             <div class="flex items-center justify-between mb-4">
@@ -256,7 +248,6 @@
           </div>
         </section>
 
-        <!-- Manual Confirmation Section -->
         <section class="glass rounded-2xl p-5">
           <h3 class="text-lg font-semibold mb-4">Manual Confirmation Checklist</h3>
 
@@ -284,10 +275,8 @@
         </section>
       </div>
 
-      <!-- Right Sidebar -->
       <aside class="space-y-6">
 
-        <!-- AI Confirmation -->
         <section class="glass rounded-2xl p-4">
           <div class="flex items-center justify-between mb-4">
             <h3 class="text-lg font-semibold">AI Confirmation</h3>
@@ -297,59 +286,57 @@
           <div class="space-y-3">
             <div class="bg-slate-900 border border-slate-700 rounded-xl p-3">
               <p class="text-xs text-slate-400">Selected Category</p>
-              <p id="selectedCategory" class="text-base font-semibold">Commodities</p>
+              <p id="selectedCategory" class="text-base font-semibold">Loading...</p>
             </div>
 
             <div class="bg-slate-900 border border-slate-700 rounded-xl p-3">
               <p class="text-xs text-slate-400">AI Bias</p>
-              <p id="aiBias" class="text-base font-semibold">Bullish</p>
+              <p id="aiBias" class="text-base font-semibold">Loading...</p>
             </div>
 
             <div class="bg-slate-900 border border-slate-700 rounded-xl p-3">
               <p class="text-xs text-slate-400">Signal Direction</p>
-              <p id="signalDirection" class="text-base font-semibold status-buy">BUY</p>
+              <p id="signalDirection" class="text-base font-semibold status-hold">Loading...</p>
             </div>
 
             <div class="bg-slate-900 border border-slate-700 rounded-xl p-3">
               <p class="text-xs text-slate-400">Market Regime</p>
-              <p id="marketRegime" class="text-base font-semibold">Trending</p>
+              <p id="marketRegime" class="text-base font-semibold">Loading...</p>
             </div>
 
             <div class="bg-slate-900 border border-slate-700 rounded-xl p-3">
               <div class="flex items-center justify-between mb-2">
                 <p class="text-xs text-slate-400">Confidence</p>
-                <p id="confidenceText" class="text-sm font-semibold">78%</p>
+                <p id="confidenceText" class="text-sm font-semibold">--%</p>
               </div>
               <div class="w-full bg-slate-800 rounded-full h-3">
-                <div id="confidenceBar" class="bg-blue-500 h-3 rounded-full" style="width: 78%;"></div>
+                <div id="confidenceBar" class="bg-blue-500 h-3 rounded-full" style="width: 0%;"></div>
               </div>
             </div>
           </div>
         </section>
 
-        <!-- Correlation View -->
         <section class="glass rounded-2xl p-4">
           <h3 class="text-lg font-semibold mb-4">Cross-Market Read</h3>
 
           <div class="space-y-3">
             <div class="bg-slate-900 border border-slate-700 rounded-xl p-3">
               <p class="text-xs text-slate-400">Dollar / FX</p>
-              <p id="readFx" class="text-sm font-semibold">Neutral to weak USD</p>
+              <p id="readFx" class="text-sm font-semibold">Loading...</p>
             </div>
 
             <div class="bg-slate-900 border border-slate-700 rounded-xl p-3">
               <p class="text-xs text-slate-400">Commodities</p>
-              <p id="readCommodities" class="text-sm font-semibold">Supportive of risk appetite</p>
+              <p id="readCommodities" class="text-sm font-semibold">Loading...</p>
             </div>
 
             <div class="bg-slate-900 border border-slate-700 rounded-xl p-3">
               <p class="text-xs text-slate-400">Indices</p>
-              <p id="readIndices" class="text-sm font-semibold">Risk-on bias</p>
+              <p id="readIndices" class="text-sm font-semibold">Loading...</p>
             </div>
           </div>
         </section>
 
-        <!-- Trade Approval -->
         <section class="glass rounded-2xl p-4">
           <h3 class="text-lg font-semibold mb-4">Trade Approval</h3>
 
@@ -376,7 +363,6 @@
           </div>
         </section>
 
-        <!-- Notes -->
         <section class="glass rounded-2xl p-4">
           <h3 class="text-lg font-semibold mb-4">Analysis Notes</h3>
           <textarea
@@ -434,34 +420,27 @@
         details: false,
         hotlist: false,
         calendar: false,
-        studies: [
-          "RSI@tv-basicstudies"
-        ],
+        studies: ["RSI@tv-basicstudies"],
         container_id: containerId
       });
     }
 
-    // Main charts
     createAdvancedChart("tv-commodities-main", "TVC:GOLD", "60");
     createAdvancedChart("tv-currencies-main", "FX:EURUSD", "60");
     createAdvancedChart("tv-indices-main", "FOREXCOM:SPXUSD", "60");
 
-    // Commodity minis
     createMiniChart("tv-gold", "TVC:GOLD", "240");
     createMiniChart("tv-silver", "TVC:SILVER", "240");
     createMiniChart("tv-oil", "TVC:USOIL", "240");
 
-    // Currency minis
     createMiniChart("tv-eurusd", "FX:EURUSD", "240");
     createMiniChart("tv-gbpusd", "FX:GBPUSD", "240");
     createMiniChart("tv-usdjpy", "FX:USDJPY", "240");
 
-    // Index minis
     createMiniChart("tv-spx", "FOREXCOM:SPXUSD", "240");
     createMiniChart("tv-nasdaq", "FOREXCOM:NSXUSD", "240");
     createMiniChart("tv-dji", "FOREXCOM:DJI", "240");
 
-    // Tabs
     const tabButtons = document.querySelectorAll(".tab-btn");
     const tabContents = document.querySelectorAll(".tab-content");
 
@@ -475,39 +454,6 @@
     const readCommodities = document.getElementById("readCommodities");
     const readIndices = document.getElementById("readIndices");
 
-    const tabState = {
-      commodities: {
-        category: "Commodities",
-        bias: "Bullish",
-        signal: "BUY",
-        regime: "Trending",
-        confidence: 78,
-        fx: "Neutral to weak USD",
-        commodities: "Gold strength supporting bullish thesis",
-        indices: "Moderate risk-on"
-      },
-      currencies: {
-        category: "Currencies",
-        bias: "Neutral",
-        signal: "HOLD",
-        regime: "Range / Mixed",
-        confidence: 58,
-        fx: "Dollar decision zone",
-        commodities: "No clear commodity push",
-        indices: "Waiting for clearer sentiment"
-      },
-      indices: {
-        category: "Indices",
-        bias: "Bullish",
-        signal: "BUY",
-        regime: "Risk-on",
-        confidence: 72,
-        fx: "USD not blocking upside",
-        commodities: "Oil and metals supportive",
-        indices: "Broad equity strength present"
-      }
-    };
-
     function applySignalClass(signal) {
       signalDirection.classList.remove("status-buy", "status-sell", "status-hold");
 
@@ -520,20 +466,42 @@
       }
     }
 
-    function updateSidebar(tab) {
-      const state = tabState[tab];
+    async function updateSidebar(tab) {
+      try {
+        const res = await fetch(`/chart-confirmation?tab=${tab}`);
 
-      selectedCategory.textContent = state.category;
-      aiBias.textContent = state.bias;
-      signalDirection.textContent = state.signal;
-      marketRegime.textContent = state.regime;
-      confidenceText.textContent = state.confidence + "%";
-      confidenceBar.style.width = state.confidence + "%";
-      readFx.textContent = state.fx;
-      readCommodities.textContent = state.commodities;
-      readIndices.textContent = state.indices;
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
 
-      applySignalClass(state.signal);
+        const state = await res.json();
+
+        selectedCategory.textContent = state.category || "Unknown";
+        aiBias.textContent = state.bias || "Neutral";
+        signalDirection.textContent = state.signal || "HOLD";
+        marketRegime.textContent = state.regime || "Unknown";
+        confidenceText.textContent = `${state.confidence ?? 50}%`;
+        confidenceBar.style.width = `${state.confidence ?? 50}%`;
+        readFx.textContent = state.fx || "No data";
+        readCommodities.textContent = state.commodities || "No data";
+        readIndices.textContent = state.indices || "No data";
+
+        applySignalClass(state.signal || "HOLD");
+      } catch (err) {
+        console.error("Failed to load chart confirmation:", err);
+
+        selectedCategory.textContent = "Unavailable";
+        aiBias.textContent = "Neutral";
+        signalDirection.textContent = "HOLD";
+        marketRegime.textContent = "Unknown";
+        confidenceText.textContent = "50%";
+        confidenceBar.style.width = "50%";
+        readFx.textContent = "No data";
+        readCommodities.textContent = "No data";
+        readIndices.textContent = "No data";
+
+        applySignalClass("HOLD");
+      }
     }
 
     tabButtons.forEach(button => {
