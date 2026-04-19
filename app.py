@@ -8,7 +8,7 @@ import pandas as pd
 import requests
 import uuid
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 app = Flask(__name__)
 CORS(app)
@@ -21,6 +21,31 @@ bot_config = {
 }
 
 DB_NAME = "trades.db"
+
+BINANCE_BASE_URLS = [
+    "https://api.binance.com",
+    "https://api-gcp.binance.com",
+    "https://api1.binance.com",
+    "https://api2.binance.com",
+    "https://api3.binance.com",
+    "https://api4.binance.com",
+    "https://data-api.binance.vision",
+]
+
+COINBASE_PRODUCT_MAP = {
+    "BTCUSDT": "BTC-USD",
+    "ETHUSDT": "ETH-USD",
+    "BNBUSDT": "BNB-USD",
+    "SOLUSDT": "SOL-USD",
+}
+
+COINBASE_GRANULARITY_MAP = {
+    "1m": 60,
+    "5m": 300,
+    "15m": 900,
+    "1h": 3600,
+    "4h": 3600,  # fetched as 1h and aggregated to 4h
+}
 
 
 # ---------------- DATABASE ----------------
@@ -60,27 +85,51 @@ init_db()
 
 
 # ---------------- DATA ----------------
+def _request_json(url, params=None, timeout=10):
+    response = requests.get(url, params=params, timeout=timeout)
+    return response
+
+
+def _fetch_binance_klines(symbol, interval="1m", limit=100):
+    last_error = None
+
+    for base_url in BINANCE_BASE_URLS:
+        try:
+            response = _request_json(
+                f"{base_url}/api/v3/klines",
+                params={
+                    "symbol": symbol,
+                    "interval": interval,
+                    "limit": limit
+                },
+                timeout=8
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                if isinstance(data, list) and len(data) >= 2:
+                    return data
+
+                last_error = f"{base_url} returned invalid kline data"
+                continue
+
+            body = (response.text or "").strip()
+            if len(body) > 250:
+                body = body[:250] + "..."
+            last_error = f"{base_url} returned HTTP {response.status_code}: {body}"
+
+        except requests.exceptions.RequestException as e:
+            last_error = f"{base_url} request failed: {str(e)}"
+
+    raise RuntimeError(last_error or "All Binance endpoints failed")
+
+
 def fetch_binance(symbol, interval="1m", limit=100):
     try:
         if not symbol or not symbol.endswith("USDT"):
             return None
 
-        url = "https://api.binance.com/api/v3/klines"
-        params = {
-            "symbol": symbol,
-            "interval": interval,
-            "limit": limit
-        }
-
-        r = requests.get(url, params=params, timeout=5)
-
-        if r.status_code != 200:
-            return None
-
-        data = r.json()
-
-        if not isinstance(data, list) or len(data) < 2:
-            return None
+        data = _fetch_binance_klines(symbol, interval=interval, limit=limit)
 
         df = pd.DataFrame(data, columns=[
             "time", "open", "high", "low", "close", "volume",
@@ -104,47 +153,150 @@ def fetch_binance(symbol, interval="1m", limit=100):
         return None
 
 
+def _coinbase_fetch_candles(product_id, granularity, total_needed):
+    all_rows = []
+    end_time = datetime.now(timezone.utc)
+
+    while len(all_rows) < total_needed:
+        remaining = total_needed - len(all_rows)
+        batch_size = min(300, remaining)
+
+        start_time = end_time - timedelta(seconds=granularity * batch_size)
+
+        response = _request_json(
+            f"https://api.exchange.coinbase.com/products/{product_id}/candles",
+            params={
+                "granularity": granularity,
+                "start": start_time.isoformat(),
+                "end": end_time.isoformat()
+            },
+            timeout=12
+        )
+
+        if response.status_code != 200:
+            body = (response.text or "").strip()
+            if len(body) > 250:
+                body = body[:250] + "..."
+            raise RuntimeError(f"Coinbase returned HTTP {response.status_code}: {body}")
+
+        rows = response.json()
+
+        if not isinstance(rows, list):
+            raise RuntimeError(f"Coinbase returned invalid candle data: {rows}")
+
+        if not rows:
+            break
+
+        all_rows.extend(rows)
+
+        earliest_ts = min(r[0] for r in rows)
+        end_time = datetime.fromtimestamp(earliest_ts, tz=timezone.utc) - timedelta(seconds=granularity)
+
+        if len(rows) < batch_size:
+            break
+
+    if not all_rows:
+        raise RuntimeError("Coinbase returned no candle data")
+
+    unique_rows = {}
+    for row in all_rows:
+        if isinstance(row, list) and len(row) >= 6:
+            unique_rows[int(row[0])] = row
+
+    ordered = [unique_rows[k] for k in sorted(unique_rows.keys())]
+    return ordered[-total_needed:]
+
+
+def _aggregate_coinbase_1h_to_4h(rows, limit):
+    if not rows:
+        return []
+
+    rows = sorted(rows, key=lambda x: x[0])
+    grouped = []
+
+    bucket = []
+    for row in rows:
+        bucket.append(row)
+        if len(bucket) == 4:
+            ts = int(bucket[0][0])
+            low = min(float(r[1]) for r in bucket)
+            high = max(float(r[2]) for r in bucket)
+            open_price = float(bucket[0][3])
+            close_price = float(bucket[-1][4])
+            volume = sum(float(r[5]) for r in bucket)
+
+            grouped.append([ts, low, high, open_price, close_price, volume])
+            bucket = []
+
+    return grouped[-limit:]
+
+
+def _fetch_coinbase_raw(symbol="BTCUSDT", interval="5m", limit=200):
+    product_id = COINBASE_PRODUCT_MAP.get(symbol)
+    if not product_id:
+        raise RuntimeError(f"No Coinbase fallback mapping for symbol {symbol}")
+
+    if interval not in COINBASE_GRANULARITY_MAP:
+        raise RuntimeError(f"No Coinbase fallback granularity for interval {interval}")
+
+    if interval == "4h":
+        raw_1h = _coinbase_fetch_candles(product_id, 3600, max(limit * 4, 4))
+        aggregated = _aggregate_coinbase_1h_to_4h(raw_1h, limit)
+
+        if not aggregated:
+            raise RuntimeError("Coinbase fallback could not build 4h candles")
+
+        converted = []
+        for row in aggregated:
+            converted.append([
+                int(row[0]) * 1000,
+                str(row[3]),  # open
+                str(row[2]),  # high
+                str(row[1]),  # low
+                str(row[4]),  # close
+                str(row[5]),  # volume
+            ])
+        return converted
+
+    granularity = COINBASE_GRANULARITY_MAP[interval]
+    rows = _coinbase_fetch_candles(product_id, granularity, limit)
+
+    converted = []
+    for row in rows:
+        # Coinbase format:
+        # [time, low, high, open, close, volume]
+        converted.append([
+            int(row[0]) * 1000,
+            str(row[3]),  # open
+            str(row[2]),  # high
+            str(row[1]),  # low
+            str(row[4]),  # close
+            str(row[5]),  # volume
+        ])
+
+    return converted
+
+
 def fetch_binance_raw(symbol="BTCUSDT", interval="5m", limit=500):
     if not symbol or not symbol.endswith("USDT"):
         raise ValueError("Invalid symbol")
 
-    url = "https://api.binance.com/api/v3/klines"
-    params = {
-        "symbol": symbol,
-        "interval": interval,
-        "limit": limit
-    }
+    if limit < 1:
+        raise ValueError("Invalid candle limit")
+
+    binance_error = None
 
     try:
-        response = requests.get(url, params=params, timeout=20)
-    except requests.exceptions.Timeout:
-        raise RuntimeError("Request to Binance timed out while fetching historical candles")
-    except requests.exceptions.ConnectionError:
-        raise RuntimeError("Could not connect to Binance to fetch historical candles")
-    except requests.exceptions.RequestException as e:
-        raise RuntimeError(f"Network error while fetching historical candles: {str(e)}")
+        return _fetch_binance_klines(symbol, interval=interval, limit=limit)
+    except Exception as e:
+        binance_error = str(e)
 
-    if response.status_code != 200:
-        response_preview = (response.text or "").strip()
-        if len(response_preview) > 300:
-            response_preview = response_preview[:300] + "..."
+    try:
+        return _fetch_coinbase_raw(symbol=symbol, interval=interval, limit=limit)
+    except Exception as fallback_error:
         raise RuntimeError(
-            f"Binance returned HTTP {response.status_code} while fetching candles"
-            + (f": {response_preview}" if response_preview else "")
+            f"Primary source failed ({binance_error}) | Fallback source failed ({fallback_error})"
         )
-
-    try:
-        data = response.json()
-    except ValueError:
-        raise RuntimeError("Binance returned an invalid JSON response")
-
-    if not isinstance(data, list):
-        raise RuntimeError(f"Unexpected Binance response format: {data}")
-
-    if len(data) == 0:
-        raise RuntimeError("Binance returned no candle data for that request")
-
-    return data
 
 
 # ---------------- SIGNAL / ANALYSIS ----------------
@@ -853,7 +1005,7 @@ def api_backtest():
 
         symbol = str(data.get("symbol", "BTCUSDT")).upper()
         interval = str(data.get("interval", "5m"))
-        limit = int(data.get("limit", 500))
+        limit = int(data.get("limit", 200))
         strategy = str(data.get("strategy", "basic"))
         starting_balance = float(data.get("starting_balance", 1000))
 
