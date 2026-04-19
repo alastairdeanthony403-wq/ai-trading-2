@@ -15,12 +15,13 @@ CORS(app)
 
 # ---------------- CONFIG ----------------
 bot_config = {
-    "symbols": ["BTCUSDT", "ETHUSDT"],   # Removed AAPL because Binance won't support it
+    "symbols": ["BTCUSDT", "ETHUSDT"],   # Binance-supported examples
     "risk_reward": 2,
     "risk_percent": 1
 }
 
 DB_NAME = "trades.db"
+
 
 # ---------------- DATABASE ----------------
 def init_db():
@@ -54,20 +55,28 @@ def init_db():
     conn.commit()
     conn.close()
 
+
 init_db()
 
+
 # ---------------- DATA ----------------
-def fetch_binance(symbol):
+def fetch_binance(symbol, interval="1m", limit=100):
     """
-    Fetch 1-minute Binance candles.
-    Returns pandas DataFrame or None if symbol unsupported/fetch fails.
+    Fetch candles from Binance.
+    Returns DataFrame or None.
     """
     try:
-        if not symbol.endswith("USDT"):
+        if not symbol or not symbol.endswith("USDT"):
             return None
 
-        url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval=1m&limit=100"
-        r = requests.get(url, timeout=5)
+        url = "https://api.binance.com/api/v3/klines"
+        params = {
+            "symbol": symbol,
+            "interval": interval,
+            "limit": limit
+        }
+
+        r = requests.get(url, params=params, timeout=5)
 
         if r.status_code != 200:
             return None
@@ -79,13 +88,15 @@ def fetch_binance(symbol):
 
         df = pd.DataFrame(data, columns=[
             "time", "open", "high", "low", "close", "volume",
-            "_1", "_2", "_3", "_4", "_5", "_6"
+            "close_time", "quote_asset_volume", "number_of_trades",
+            "taker_buy_base", "taker_buy_quote", "ignore"
         ])
 
         numeric_cols = ["open", "high", "low", "close", "volume"]
         for col in numeric_cols:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
+        df["time"] = pd.to_datetime(df["time"], unit="ms", errors="coerce")
         df.dropna(inplace=True)
 
         if len(df) < 2:
@@ -96,189 +107,107 @@ def fetch_binance(symbol):
     except Exception:
         return None
 
-# ---------------- SIGNAL ----------------
+
+# ---------------- SIGNAL / ANALYSIS ----------------
 def generate_signal(df):
     if df is None or len(df) < 2:
         return "HOLD"
 
-    price = df.iloc[-1]["close"]
-    prev = df.iloc[-2]["close"]
+    latest = df.iloc[-1]["close"]
+    previous = df.iloc[-2]["close"]
 
-    if price > prev:
+    if latest > previous:
         return "BUY"
-    elif price < prev:
+    elif latest < previous:
         return "SELL"
     return "HOLD"
 
-# ---------------- STRUCTURE / CONTEXT ----------------
+
 def get_structure(df):
-    """
-    Simple structure read:
-    - Bullish if latest close > rolling mean and recent closes rising
-    - Bearish if latest close < rolling mean and recent closes falling
-    - Else range
-    """
     if df is None or len(df) < 20:
         return "Range / Mixed"
 
-    close = df["close"]
-    sma20 = close.tail(20).mean()
+    closes = df["close"]
+    sma20 = closes.tail(20).mean()
 
-    latest = close.iloc[-1]
-    prev1 = close.iloc[-2]
-    prev2 = close.iloc[-3]
+    c0 = closes.iloc[-1]
+    c1 = closes.iloc[-2]
+    c2 = closes.iloc[-3]
 
-    if latest > sma20 and latest > prev1 > prev2:
+    if c0 > sma20 and c0 > c1 > c2:
         return "Bullish Structure"
-    elif latest < sma20 and latest < prev1 < prev2:
+    elif c0 < sma20 and c0 < c1 < c2:
         return "Bearish Structure"
-    else:
-        return "Range / Mixed"
+    return "Range / Mixed"
+
 
 def get_market_regime(df):
     if df is None or len(df) < 20:
         return "Unknown"
 
-    high_low_range = (df["high"].tail(20).max() - df["low"].tail(20).min())
+    recent_high = df["high"].tail(20).max()
+    recent_low = df["low"].tail(20).min()
     avg_price = df["close"].tail(20).mean()
 
     if avg_price == 0:
         return "Unknown"
 
-    range_percent = (high_low_range / avg_price) * 100
+    range_percent = ((recent_high - recent_low) / avg_price) * 100
 
     if range_percent > 2.5:
         return "Trending"
     elif range_percent > 1.0:
         return "Active"
-    else:
-        return "Range / Quiet"
+    return "Range / Quiet"
+
 
 def estimate_confidence(df, signal):
-    """
-    Very simple confidence estimate based on:
-    - price vs SMA20
-    - direction consistency
-    """
     if df is None or len(df) < 20:
         return 50
 
-    close = df["close"]
-    sma20 = close.tail(20).mean()
-    latest = close.iloc[-1]
-    prev = close.iloc[-2]
+    closes = df["close"]
+    latest = closes.iloc[-1]
+    previous = closes.iloc[-2]
+    sma20 = closes.tail(20).mean()
+    sma5 = closes.tail(5).mean()
 
     confidence = 50
 
     if signal == "BUY":
         if latest > sma20:
             confidence += 15
-        if latest > prev:
+        if latest > previous:
             confidence += 10
-        if latest > close.tail(5).mean():
+        if latest > sma5:
             confidence += 10
 
     elif signal == "SELL":
         if latest < sma20:
             confidence += 15
-        if latest < prev:
+        if latest < previous:
             confidence += 10
-        if latest < close.tail(5).mean():
+        if latest < sma5:
             confidence += 10
 
     return max(35, min(95, confidence))
 
-# ---------------- ACCOUNT ----------------
-def get_balance():
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
 
-    c.execute("SELECT SUM(pnl) FROM trades WHERE status='CLOSED'")
-    total_pnl = c.fetchone()[0] or 0
+def get_bias_from_signal(signal):
+    if signal == "BUY":
+        return "Bullish"
+    elif signal == "SELL":
+        return "Bearish"
+    return "Neutral"
 
-    conn.close()
-    return 10000 + total_pnl
 
-# ---------------- ALERTS ----------------
-def add_alert(message):
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
+def get_trade_idea(signal):
+    if signal == "BUY":
+        return "Pullback long / continuation"
+    elif signal == "SELL":
+        return "Reject highs / continuation short"
+    return "Wait for clearer confirmation"
 
-    c.execute("""
-    INSERT INTO alerts VALUES (?, ?, ?)
-    """, (str(uuid.uuid4()), message, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
 
-    conn.commit()
-    conn.close()
-
-# ---------------- TRADES ----------------
-def get_open_trades():
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-
-    c.execute("SELECT * FROM trades WHERE status='OPEN'")
-    rows = c.fetchall()
-
-    conn.close()
-    return rows
-
-def open_trade(symbol, signal, price):
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-
-    risk_amount = get_balance() * (bot_config["risk_percent"] / 100)
-
-    sl = price * 0.99 if signal == "BUY" else price * 1.01
-    tp = price + (price - sl) * bot_config["risk_reward"] if signal == "BUY" else price - (sl - price) * bot_config["risk_reward"]
-
-    stop_distance = abs(price - sl)
-    size = risk_amount / stop_distance if stop_distance else 0
-
-    trade_id = str(uuid.uuid4())
-
-    c.execute("""
-    INSERT INTO trades VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, 'OPEN', ?)
-    """, (
-        trade_id, symbol, signal, price, sl, tp, size,
-        datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    ))
-
-    add_alert(f"🚀 OPEN {symbol} {signal} @ {price}")
-
-    conn.commit()
-    conn.close()
-
-def close_trade(trade_id, exit_price, pnl, symbol):
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-
-    c.execute("""
-    UPDATE trades
-    SET exit=?, pnl=?, status='CLOSED'
-    WHERE id=?
-    """, (exit_price, pnl, trade_id))
-
-    add_alert(f"✅ CLOSED {symbol} PnL: {round(pnl, 2)}")
-
-    conn.commit()
-    conn.close()
-
-def update_trades(symbol, price):
-    open_trades = get_open_trades()
-
-    for t in open_trades:
-        trade_id, sym, type_, entry, sl, tp, size, _, _, _, _ = t
-
-        if sym != symbol:
-            continue
-
-        pnl = (price - entry) * size if type_ == "BUY" else (entry - price) * size
-
-        if (type_ == "BUY" and (price <= sl or price >= tp)) or \
-           (type_ == "SELL" and (price >= sl or price <= tp)):
-            close_trade(trade_id, price, pnl, sym)
-
-# ---------------- ENGINE SUMMARY HELPERS ----------------
 def get_symbol_summary(symbol):
     df = fetch_binance(symbol)
     if df is None:
@@ -289,16 +218,8 @@ def get_symbol_summary(symbol):
     structure = get_structure(df)
     regime = get_market_regime(df)
     confidence = estimate_confidence(df, signal)
-
-    if signal == "BUY":
-        bias = "Bullish"
-        trade_idea = "Pullback long / continuation"
-    elif signal == "SELL":
-        bias = "Bearish"
-        trade_idea = "Reject highs / continuation short"
-    else:
-        bias = "Neutral"
-        trade_idea = "Wait for clearer confirmation"
+    bias = get_bias_from_signal(signal)
+    trade_idea = get_trade_idea(signal)
 
     return {
         "symbol": symbol,
@@ -311,10 +232,8 @@ def get_symbol_summary(symbol):
         "trade_idea": trade_idea
     }
 
+
 def get_engine_snapshot():
-    """
-    Use first valid configured symbol as engine reference.
-    """
     for symbol in bot_config["symbols"]:
         summary = get_symbol_summary(symbol)
         if summary:
@@ -331,23 +250,138 @@ def get_engine_snapshot():
         "trade_idea": "No live data"
     }
 
-# ---------------- REALTIME ROUTE ----------------
+
+# ---------------- ACCOUNT ----------------
+def get_balance():
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+
+    c.execute("SELECT SUM(pnl) FROM trades WHERE status='CLOSED'")
+    total_pnl = c.fetchone()[0] or 0
+
+    conn.close()
+    return 10000 + total_pnl
+
+
+# ---------------- ALERTS ----------------
+def add_alert(message):
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+
+    c.execute("""
+    INSERT INTO alerts VALUES (?, ?, ?)
+    """, (
+        str(uuid.uuid4()),
+        message,
+        datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    ))
+
+    conn.commit()
+    conn.close()
+
+
+# ---------------- TRADES ----------------
+def get_open_trades():
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+
+    c.execute("SELECT * FROM trades WHERE status='OPEN'")
+    rows = c.fetchall()
+
+    conn.close()
+    return rows
+
+
+def open_trade(symbol, signal, price):
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+
+    risk_amount = get_balance() * (bot_config["risk_percent"] / 100)
+
+    sl = price * 0.99 if signal == "BUY" else price * 1.01
+    tp = (
+        price + (price - sl) * bot_config["risk_reward"]
+        if signal == "BUY"
+        else price - (sl - price) * bot_config["risk_reward"]
+    )
+
+    stop_distance = abs(price - sl)
+    size = risk_amount / stop_distance if stop_distance else 0
+
+    trade_id = str(uuid.uuid4())
+
+    c.execute("""
+    INSERT INTO trades VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, 'OPEN', ?)
+    """, (
+        trade_id,
+        symbol,
+        signal,
+        price,
+        sl,
+        tp,
+        size,
+        datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    ))
+
+    conn.commit()
+    conn.close()
+
+    add_alert(f"🚀 OPEN {symbol} {signal} @ {round(price, 2)}")
+
+
+def close_trade(trade_id, exit_price, pnl, symbol):
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+
+    c.execute("""
+    UPDATE trades
+    SET exit=?, pnl=?, status='CLOSED'
+    WHERE id=?
+    """, (exit_price, pnl, trade_id))
+
+    conn.commit()
+    conn.close()
+
+    add_alert(f"✅ CLOSED {symbol} PnL: {round(pnl, 2)}")
+
+
+def update_trades(symbol, price):
+    open_trades = get_open_trades()
+
+    for trade in open_trades:
+        trade_id, sym, type_, entry, sl, tp, size, _, _, _, _ = trade
+
+        if sym != symbol:
+            continue
+
+        pnl = (price - entry) * size if type_ == "BUY" else (entry - price) * size
+
+        if (
+            (type_ == "BUY" and (price <= sl or price >= tp))
+            or
+            (type_ == "SELL" and (price >= sl or price <= tp))
+        ):
+            close_trade(trade_id, price, pnl, sym)
+
+
+# ---------------- API ROUTES ----------------
 @app.route("/live_trades")
 def live_trades():
     results = []
     open_trades = get_open_trades()
 
-    for t in open_trades:
-        trade_id, symbol, type_, entry, sl, tp, size, _, _, _, time = t
+    for trade in open_trades:
+        trade_id, symbol, type_, entry, sl, tp, size, _, _, _, time_opened = trade
 
         df = fetch_binance(symbol)
         if df is None:
             continue
 
-        price = df.iloc[-1]["close"]
+        price = float(df.iloc[-1]["close"])
         pnl = (price - entry) * size if type_ == "BUY" else (entry - price) * size
 
         results.append({
+            "id": trade_id,
             "symbol": symbol,
             "type": type_,
             "entry": round(entry, 2),
@@ -356,26 +390,20 @@ def live_trades():
             "pnl": round(pnl, 2),
             "sl": round(sl, 2),
             "tp": round(tp, 2),
-            "time": time
+            "time": time_opened
         })
 
     return jsonify(results)
 
-# ============================================================
-# NEW CHARTS API ROUTES
-# ============================================================
 
 @app.route("/chart-confirmation")
 def chart_confirmation():
     """
-    Returns dynamic sidebar data for the /charts page.
-    Frontend can call:
+    Sidebar data for /charts
+    Example:
     /chart-confirmation?tab=commodities
-    /chart-confirmation?tab=currencies
-    /chart-confirmation?tab=indices
     """
     tab = request.args.get("tab", "commodities").lower()
-
     engine = get_engine_snapshot()
 
     if tab == "commodities":
@@ -385,13 +413,12 @@ def chart_confirmation():
             "signal": engine["signal"],
             "regime": engine["regime"],
             "confidence": engine["confidence"],
-            "fx": "Neutral to weak USD" if engine["bias"] == "Bullish" else "USD strength watch",
+            "fx": "Neutral to weak USD" if engine["signal"] == "BUY" else "USD strength watch",
             "commodities": engine["trade_idea"],
             "indices": "Moderate risk-on" if engine["signal"] == "BUY" else "Mixed / cautious"
         }
 
     elif tab == "currencies":
-        # Slightly softer framing for FX tab
         data = {
             "category": "Currencies",
             "bias": "Neutral" if engine["signal"] == "HOLD" else engine["bias"],
@@ -429,15 +456,15 @@ def chart_confirmation():
 
     return jsonify(data)
 
+
 @app.route("/chart-status")
 def chart_status():
     """
-    Lightweight chart data endpoint.
-    Frontend can call:
+    Lightweight symbol summary endpoint
+    Example:
     /chart-status?symbol=BTCUSDT
     """
     symbol = request.args.get("symbol", "BTCUSDT").upper()
-
     summary = get_symbol_summary(symbol)
 
     if not summary:
@@ -454,25 +481,27 @@ def chart_status():
 
     return jsonify(summary)
 
-# ---------------- OPTIONAL EXISTING STATS ROUTES PLACEHOLDERS ----------------
-# Keep/add your own history/equity/stats/alerts routes here if already built
 
 # ---------------- PAGE ROUTES ----------------
 @app.route("/")
 def home():
     return render_template("index.html")
 
+
 @app.route("/charts")
 def charts():
     return render_template("charts.html")
+
 
 @app.route("/analytics")
 def analytics():
     return render_template("analytics.html")
 
+
 @app.route("/realtime")
 def realtime():
     return render_template("realtime.html")
+
 
 # ---------------- RUN ----------------
 if __name__ == "__main__":
