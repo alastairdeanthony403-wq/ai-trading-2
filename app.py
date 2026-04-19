@@ -819,4 +819,80 @@ def api_chart_candles():
     return jsonify(candles)
 
 
-@app.route
+@app.route("/api/chart-overlays")
+def api_chart_overlays():
+    symbol = request.args.get("symbol", "BTCUSDT").upper()
+    interval = request.args.get("interval", "1m")
+    limit = int(request.args.get("limit", 200))
+
+    data = get_chart_signals(symbol=symbol, interval=interval, limit=limit)
+    return jsonify(data)
+
+
+@app.route("/api/backtest", methods=["POST"])
+def api_backtest():
+    try:
+        data = request.get_json(force=True)
+
+        symbol = str(data.get("symbol", "BTCUSDT")).upper()
+        interval = str(data.get("interval", "5m"))
+        limit = int(data.get("limit", 500))
+        strategy = str(data.get("strategy", "basic"))
+        starting_balance = float(data.get("starting_balance", 1000))
+
+        if limit < 50:
+            limit = 50
+        if limit > 1500:
+            limit = 1500
+
+        candles = fetch_binance_raw(symbol=symbol, interval=interval, limit=limit)
+
+        if not candles:
+            return jsonify({"error": "Could not fetch historical candle data"}), 500
+
+        signals = simple_signal_logic(candles, strategy=strategy)
+        summary, trades = run_backtest_engine(
+            candles,
+            signals,
+            starting_balance=starting_balance
+        )
+
+        return jsonify({
+            "summary": summary,
+            "signals": signals,
+            "trades": trades
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ---------------- PAGE ROUTES ----------------
+@app.route("/")
+def home():
+    return render_template("index.html")
+
+
+@app.route("/charts")
+def charts():
+    return render_template("charts.html")
+
+
+@app.route("/analytics")
+def analytics():
+    return render_template("analytics.html")
+
+
+@app.route("/realtime")
+def realtime():
+    return render_template("realtime.html")
+
+
+@app.route("/backtester")
+def backtester():
+    return render_template("backtester.html")
+
+
+# ---------------- RUN ----------------
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=10000, debug=True)
