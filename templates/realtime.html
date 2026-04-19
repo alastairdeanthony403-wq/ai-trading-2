@@ -412,6 +412,7 @@
         <a href="/">🏠 Home</a>
         <a href="/analytics">📊 Analytics</a>
         <a href="/charts">📉 Charts</a>
+        <a href="/backtester">🧪 Backtester</a>
       </div>
 
       <div class="live-status">
@@ -791,9 +792,9 @@
         return `
           <tr>
             <td>${trade.symbol || "--"}</td>
-            <td class="${trade.side === "BUY" ? "positive" : "negative"}">${trade.side || "--"}</td>
-            <td>${trade.entry_price ?? "--"}</td>
-            <td>${trade.current_price ?? "--"}</td>
+            <td class="${trade.side === "BUY" ? "positive" : "negative"}">${trade.side || trade.type || "--"}</td>
+            <td>${trade.entry_price ?? trade.entry ?? "--"}</td>
+            <td>${trade.current_price ?? trade.price ?? "--"}</td>
             <td class="${pnlClass}">${formatMoney(pnl)}</td>
           </tr>
         `;
@@ -864,13 +865,6 @@
         if (!res.ok) return;
 
         const data = await res.json();
-        /*
-          Expected example:
-          {
-            "BTCUSDT": { "signal": "BUY", "confidence": 82, "change_pct": 0.72 },
-            "ETHUSDT": { "signal": "HOLD", "confidence": 61, "change_pct": -0.15 }
-          }
-        */
 
         for (const symbol of symbols) {
           if (!data[symbol]) continue;
@@ -926,14 +920,6 @@
         const res = await fetch("/alerts");
         if (!res.ok) return;
         const data = await res.json();
-
-        /*
-          Expected array example:
-          [
-            { "message": "BUY signal on BTCUSDT", "type": "buy" },
-            { "message": "TP hit on ETHUSDT", "type": "info" }
-          ]
-        */
 
         if (!Array.isArray(data)) return;
 
