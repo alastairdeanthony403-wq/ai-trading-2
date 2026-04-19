@@ -15,7 +15,7 @@ CORS(app)
 
 # ---------------- CONFIG ----------------
 bot_config = {
-    "symbols": ["BTCUSDT", "ETHUSDT"],   # Binance-supported examples
+    "symbols": ["BTCUSDT", "ETHUSDT"],
     "risk_reward": 2,
     "risk_percent": 1
 }
@@ -61,10 +61,6 @@ init_db()
 
 # ---------------- DATA ----------------
 def fetch_binance(symbol, interval="1m", limit=100):
-    """
-    Fetch candles from Binance.
-    Returns DataFrame or None.
-    """
     try:
         if not symbol or not symbol.endswith("USDT"):
             return None
@@ -364,6 +360,147 @@ def update_trades(symbol, price):
             close_trade(trade_id, price, pnl, sym)
 
 
+# ---------------- CHART DATA ----------------
+def get_chart_candles(symbol="BTCUSDT", interval="1m", limit=200):
+    df = fetch_binance(symbol, interval=interval, limit=limit)
+    if df is None:
+        return []
+
+    candles = []
+    for _, row in df.iterrows():
+        candles.append({
+            "time": int(row["time"].timestamp()),
+            "open": float(row["open"]),
+            "high": float(row["high"]),
+            "low": float(row["low"]),
+            "close": float(row["close"])
+        })
+    return candles
+
+
+def get_chart_signals(symbol="BTCUSDT", interval="1m", limit=200):
+    df = fetch_binance(symbol, interval=interval, limit=limit)
+    if df is None or len(df) < 30:
+        return {
+            "markers": [],
+            "trade_levels": [],
+            "annotations": []
+        }
+
+    markers = []
+    trade_levels = []
+    annotations = []
+
+    closes = df["close"].tolist()
+    highs = df["high"].tolist()
+    lows = df["low"].tolist()
+    times = [int(t.timestamp()) for t in df["time"]]
+
+    for i in range(20, len(df)):
+        recent_avg = df["close"].iloc[i - 10:i].mean()
+        current_close = closes[i]
+        prev_close = closes[i - 1]
+
+        if prev_close <= recent_avg and current_close > recent_avg:
+            entry = current_close
+            sl = lows[i] * 0.995
+            tp = entry + (entry - sl) * bot_config["risk_reward"]
+
+            markers.append({
+                "time": times[i],
+                "position": "belowBar",
+                "color": "#22c55e",
+                "shape": "arrowUp",
+                "text": f"BUY {symbol}"
+            })
+
+            trade_levels.append({
+                "time": times[i],
+                "side": "BUY",
+                "entry": round(entry, 2),
+                "sl": round(sl, 2),
+                "tp": round(tp, 2)
+            })
+
+        elif prev_close >= recent_avg and current_close < recent_avg:
+            entry = current_close
+            sl = highs[i] * 1.005
+            tp = entry - (sl - entry) * bot_config["risk_reward"]
+
+            markers.append({
+                "time": times[i],
+                "position": "aboveBar",
+                "color": "#ef4444",
+                "shape": "arrowDown",
+                "text": f"SELL {symbol}"
+            })
+
+            trade_levels.append({
+                "time": times[i],
+                "side": "SELL",
+                "entry": round(entry, 2),
+                "sl": round(sl, 2),
+                "tp": round(tp, 2)
+            })
+
+    recent_high = max(highs[-30:])
+    recent_low = min(lows[-30:])
+    t1 = times[-30]
+    t2 = times[-1]
+
+    annotations.append({
+        "type": "line",
+        "label": "BOS High",
+        "price": round(recent_high, 2),
+        "color": "#3b82f6",
+        "startTime": t1,
+        "endTime": t2
+    })
+
+    annotations.append({
+        "type": "line",
+        "label": "Liquidity Low",
+        "price": round(recent_low, 2),
+        "color": "#f59e0b",
+        "startTime": t1,
+        "endTime": t2
+    })
+
+    ob_top = max(highs[-12:-8])
+    ob_bottom = min(lows[-12:-8])
+
+    annotations.append({
+        "type": "rectangle",
+        "label": "Order Block",
+        "color": "rgba(34,197,94,0.18)",
+        "borderColor": "rgba(34,197,94,0.7)",
+        "startTime": times[-12],
+        "endTime": times[-4],
+        "top": round(ob_top, 2),
+        "bottom": round(ob_bottom, 2)
+    })
+
+    fvg_top = max(highs[-8:-6])
+    fvg_bottom = min(lows[-8:-6])
+
+    annotations.append({
+        "type": "rectangle",
+        "label": "FVG",
+        "color": "rgba(239,68,68,0.16)",
+        "borderColor": "rgba(239,68,68,0.7)",
+        "startTime": times[-8],
+        "endTime": times[-2],
+        "top": round(fvg_top, 2),
+        "bottom": round(fvg_bottom, 2)
+    })
+
+    return {
+        "markers": markers,
+        "trade_levels": trade_levels[-8:],
+        "annotations": annotations
+    }
+
+
 # ---------------- API ROUTES ----------------
 @app.route("/live_trades")
 def live_trades():
@@ -398,11 +535,6 @@ def live_trades():
 
 @app.route("/chart-confirmation")
 def chart_confirmation():
-    """
-    Sidebar data for /charts
-    Example:
-    /chart-confirmation?tab=commodities
-    """
     tab = request.args.get("tab", "commodities").lower()
     engine = get_engine_snapshot()
 
@@ -459,11 +591,6 @@ def chart_confirmation():
 
 @app.route("/chart-status")
 def chart_status():
-    """
-    Lightweight symbol summary endpoint
-    Example:
-    /chart-status?symbol=BTCUSDT
-    """
     symbol = request.args.get("symbol", "BTCUSDT").upper()
     summary = get_symbol_summary(symbol)
 
@@ -480,6 +607,26 @@ def chart_status():
         })
 
     return jsonify(summary)
+
+
+@app.route("/api/chart-candles")
+def api_chart_candles():
+    symbol = request.args.get("symbol", "BTCUSDT").upper()
+    interval = request.args.get("interval", "1m")
+    limit = int(request.args.get("limit", 200))
+
+    candles = get_chart_candles(symbol=symbol, interval=interval, limit=limit)
+    return jsonify(candles)
+
+
+@app.route("/api/chart-overlays")
+def api_chart_overlays():
+    symbol = request.args.get("symbol", "BTCUSDT").upper()
+    interval = request.args.get("interval", "1m")
+    limit = int(request.args.get("limit", 200))
+
+    data = get_chart_signals(symbol=symbol, interval=interval, limit=limit)
+    return jsonify(data)
 
 
 # ---------------- PAGE ROUTES ----------------
