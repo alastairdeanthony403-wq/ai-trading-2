@@ -122,7 +122,6 @@
 </head>
 <body class="min-h-screen">
   <div class="max-w-7xl mx-auto px-4 py-6">
-    <!-- Header -->
     <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
       <div>
         <h1 class="text-3xl font-bold text-white">Backtesting Terminal</h1>
@@ -140,11 +139,9 @@
       </div>
     </div>
 
-    <!-- Status Messages -->
     <div id="errorBox" class="error-box"></div>
     <div id="successBox" class="success-box"></div>
 
-    <!-- Controls -->
     <div class="glass rounded-2xl p-4 mb-6">
       <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4">
         <div>
@@ -181,6 +178,7 @@
         <div>
           <label class="block text-sm text-slate-300 mb-2">Strategy</label>
           <select id="strategy" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white">
+            <option value="bot" selected>Unified Live Bot (True Bot Backtest)</option>
             <option value="basic">Basic AI Strategy</option>
             <option value="smart_money">Smart Money Strategy</option>
             <option value="ema_rsi">EMA + RSI Strategy</option>
@@ -203,7 +201,6 @@
       </div>
     </div>
 
-    <!-- Summary -->
     <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4 mb-6">
       <div class="glass rounded-2xl p-4">
         <div class="text-slate-400 text-sm">Net PnL</div>
@@ -227,7 +224,6 @@
       </div>
     </div>
 
-    <!-- Chart + Signal panel -->
     <div class="grid grid-cols-1 xl:grid-cols-4 gap-6 mb-6">
       <div class="xl:col-span-3 glass rounded-2xl p-4">
         <div class="flex items-center justify-between mb-4">
@@ -259,7 +255,6 @@
       </div>
     </div>
 
-    <!-- Trade history -->
     <div class="glass rounded-2xl p-4">
       <div class="flex items-center justify-between mb-4">
         <div>
@@ -378,6 +373,7 @@
             <div class="text-sm text-slate-200">Price: <span class="font-semibold">${Number(signal.price).toFixed(2)}</span></div>
             <div class="text-xs text-slate-400 mt-1">Time: ${signal.time}</div>
             <div class="text-xs text-slate-400 mt-1">SL: ${Number(signal.stop_loss).toFixed(2)} | TP: ${Number(signal.take_profit).toFixed(2)}</div>
+            <div class="text-xs text-slate-500 mt-1">Confidence: ${Number(signal.confidence || 0).toFixed(0)}%</div>
           </div>
         `;
       }).join("");
@@ -520,7 +516,7 @@
         updateSummary(data.summary || {});
         renderSignals(Array.isArray(data.signals) ? data.signals : []);
         renderTrades(Array.isArray(data.trades) ? data.trades : []);
-        showSuccess("Backtest completed.");
+        showSuccess(strategy === "bot" ? "True bot backtest completed." : "Backtest completed.");
       } catch (err) {
         console.error("Backtest failed:", err);
         showError(err.message || "Backtest failed.");
