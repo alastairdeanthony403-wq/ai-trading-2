@@ -1054,22 +1054,55 @@ def chart_status():
 
 @app.route("/api/chart-candles")
 def api_chart_candles():
-    symbol = request.args.get("symbol", "BTCUSDT").upper()
-    interval = request.args.get("interval", "1m")
-    limit = int(request.args.get("limit", 200))
+    try:
+        symbol = request.args.get("symbol", "BTCUSDT").upper()
+        interval = request.args.get("interval", "1m")
+        limit = int(request.args.get("limit", 200))
 
-    candles = get_chart_candles(symbol=symbol, interval=interval, limit=limit)
-    return jsonify(candles)
+        candles = get_chart_candles(symbol=symbol, interval=interval, limit=limit)
+
+        if not candles:
+            return jsonify({
+                "ok": False,
+                "error": f"No candle data returned for {symbol} {interval}",
+                "data": []
+            }), 200
+
+        return jsonify({
+            "ok": True,
+            "data": candles
+        })
+    except Exception as e:
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+            "data": []
+        }), 500
 
 
 @app.route("/api/chart-overlays")
 def api_chart_overlays():
-    symbol = request.args.get("symbol", "BTCUSDT").upper()
-    interval = request.args.get("interval", "1m")
-    limit = int(request.args.get("limit", 200))
+    try:
+        symbol = request.args.get("symbol", "BTCUSDT").upper()
+        interval = request.args.get("interval", "1m")
+        limit = int(request.args.get("limit", 200))
 
-    data = get_chart_signals(symbol=symbol, interval=interval, limit=limit)
-    return jsonify(data)
+        data = get_chart_signals(symbol=symbol, interval=interval, limit=limit)
+
+        return jsonify({
+            "ok": True,
+            "data": data
+        })
+    except Exception as e:
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+            "data": {
+                "markers": [],
+                "trade_levels": [],
+                "annotations": []
+            }
+        }), 500
 
 
 @app.route("/api/backtest", methods=["POST"])
