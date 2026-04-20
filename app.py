@@ -271,16 +271,27 @@ def raw_candles_to_df(raw_candles):
     if not raw_candles or len(raw_candles) < 2:
         return None
 
-    df = pd.DataFrame(raw_candles, columns=[
-        "time", "open", "high", "low", "close", "volume"
-    ])
+    first_row = raw_candles[0]
+
+    if len(first_row) >= 12:
+        df = pd.DataFrame(raw_candles, columns=[
+            "time", "open", "high", "low", "close", "volume",
+            "close_time", "quote_asset_volume", "number_of_trades",
+            "taker_buy_base", "taker_buy_quote", "ignore"
+        ])
+    elif len(first_row) >= 6:
+        df = pd.DataFrame(raw_candles, columns=[
+            "time", "open", "high", "low", "close", "volume"
+        ])
+    else:
+        return None
 
     numeric_cols = ["open", "high", "low", "close", "volume"]
     for col in numeric_cols:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
     df["time"] = pd.to_datetime(df["time"], unit="ms", errors="coerce")
-    df.dropna(inplace=True)
+    df.dropna(subset=["time", "open", "high", "low", "close", "volume"], inplace=True)
 
     if len(df) < 2:
         return None
@@ -463,7 +474,6 @@ def evaluate_bot_window(df, strategy="bot"):
             final_signal = "HOLD"
 
     else:
-        # "bot" strategy = use live bot logic with structure + confidence filter
         if raw_signal == "BUY" and structure == "Bullish Structure" and confidence >= bot_config["min_confidence"]:
             final_signal = "BUY"
         elif raw_signal == "SELL" and structure == "Bearish Structure" and confidence >= bot_config["min_confidence"]:
