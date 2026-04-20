@@ -5,7 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Advanced Charts | AI Trading Platform</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+
+  <!-- IMPORTANT: pin to v4.2.0 so setMarkers works -->
+  <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+
   <style>
     body {
       background: #0b1220;
@@ -84,6 +87,11 @@
       width: auto !important;
       height: auto !important;
       z-index: 9999 !important;
+    }
+
+    .error-box {
+      color: #f87171;
+      font-size: 14px;
     }
   </style>
 </head>
@@ -176,6 +184,11 @@
             <div class="bg-slate-900 border border-slate-700 rounded-xl p-3">Red rectangles = fair value gaps</div>
           </div>
         </section>
+
+        <section class="glass rounded-2xl p-4">
+          <h3 class="text-lg font-semibold mb-4">Debug</h3>
+          <div id="debugBox" class="text-sm text-slate-400">Waiting...</div>
+        </section>
       </aside>
     </section>
   </main>
@@ -191,6 +204,13 @@
     const chartWrap = document.getElementById("mainChartWrap");
     const annotationLayer = document.getElementById("annotationLayer");
     const tradeLevelsBox = document.getElementById("tradeLevelsBox");
+    const debugBox = document.getElementById("debugBox");
+    const chartStatusPill = document.getElementById("chartStatusPill");
+
+    function setDebug(message, isError = false) {
+      debugBox.textContent = message;
+      debugBox.className = isError ? "error-box" : "text-sm text-slate-400";
+    }
 
     function createMainChart() {
       chart = LightweightCharts.createChart(document.getElementById("mainChart"), {
@@ -351,21 +371,45 @@
       `).join("");
     }
 
+    async function fetchJson(url) {
+      const res = await fetch(url);
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status} for ${url}`);
+      }
+
+      return await res.json();
+    }
+
     async function loadChart() {
-      const candleRes = await fetch(`/api/chart-candles?symbol=${currentSymbol}&interval=${currentInterval}&limit=200`);
-      const overlayRes = await fetch(`/api/chart-overlays?symbol=${currentSymbol}&interval=${currentInterval}&limit=200`);
+      chartStatusPill.textContent = "Loading...";
+      setDebug(`Loading ${currentSymbol} ${currentInterval}...`);
 
-      if (!candleRes.ok) throw new Error(`Candles HTTP ${candleRes.status}`);
-      if (!overlayRes.ok) throw new Error(`Overlays HTTP ${overlayRes.status}`);
+      const candlePayload = await fetchJson(`/api/chart-candles?symbol=${currentSymbol}&interval=${currentInterval}&limit=200`);
+      const overlayPayload = await fetchJson(`/api/chart-overlays?symbol=${currentSymbol}&interval=${currentInterval}&limit=200`);
 
-      const candles = await candleRes.json();
-      const overlays = await overlayRes.json();
+      if (!candlePayload.ok) {
+        throw new Error(candlePayload.error || "Candle API returned no data");
+      }
+
+      const candles = candlePayload.data || [];
+      const overlays = overlayPayload.data || {
+        markers: [],
+        trade_levels: [],
+        annotations: []
+      };
+
+      if (!candles.length) {
+        throw new Error("No candle data returned from backend");
+      }
 
       candleData = candles;
       candleSeries.setData(candles);
 
-      if (typeof candleSeries.setMarkers === "function") {
+      try {
         candleSeries.setMarkers(overlays.markers || []);
+      } catch (markerErr) {
+        console.warn("Marker error:", markerErr);
       }
 
       clearLineSeries();
@@ -381,13 +425,17 @@
       drawHtmlAnnotations(window.currentAnnotations);
 
       chart.timeScale().fitContent();
+      chartStatusPill.textContent = "Live";
+      setDebug(`Loaded ${candles.length} candles for ${currentSymbol} ${currentInterval}`);
     }
 
     async function refreshAll() {
       try {
         await loadChart();
       } catch (err) {
-        console.error(err);
+        console.error("Chart load error:", err);
+        chartStatusPill.textContent = "Error";
+        setDebug(err.message || "Unknown chart load error", true);
         tradeLevelsBox.innerHTML = `<div class="text-sm text-red-400">Failed to load chart data.</div>`;
       }
     }
