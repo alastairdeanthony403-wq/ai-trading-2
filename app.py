@@ -1,11 +1,13 @@
 # ============================================================
-# AI Trading Engine (SMC + EMA + RSI + SELF-OPTIMIZING)
+# AI Trading Engine (LEVEL 2+ UPGRADE)
+# SMC + EMA + RSI + MTF + AI CONFIDENCE + SMART SIZING
 # ============================================================
 
 from flask import Flask, render_template, jsonify, request
 from flask_cors import CORS
 import pandas as pd
 import requests
+import time
 
 app = Flask(__name__)
 CORS(app)
@@ -14,8 +16,13 @@ CORS(app)
 bot_config = {
     "symbols": ["BTCUSDT", "ETHUSDT"],
     "risk_reward": 2,
-    "risk_percent": 1,
-    "min_confidence": 60
+    "base_risk": 0.01
+}
+
+# ---------------- CACHE ----------------
+optimizer_cache = {
+    "params": None,
+    "last_update": 0
 }
 
 # ---------------- DATA ----------------
@@ -33,8 +40,8 @@ def fetch_binance(symbol, interval="1m", limit=500):
             df[col] = df[col].astype(float)
 
         df["time"] = pd.to_datetime(df["time"], unit="ms")
-
         return df
+
     except:
         return None
 
@@ -42,9 +49,9 @@ def fetch_binance(symbol, interval="1m", limit=500):
 def get_structure(df):
     sma20 = df["close"].tail(20).mean()
     if df["close"].iloc[-1] > sma20:
-        return "Bullish Structure"
+        return "Bullish"
     elif df["close"].iloc[-1] < sma20:
-        return "Bearish Structure"
+        return "Bearish"
     return "Range"
 
 def get_market_regime(df):
@@ -64,9 +71,15 @@ def get_market_regime(df):
     return "Range"
 
 # ============================================================
-# 🔥 SELF-OPTIMIZER (KEY UPGRADE)
+# 🔥 OPTIMIZER (CACHED — HUGE SPEED FIX)
 # ============================================================
 def optimize_strategy(df):
+
+    global optimizer_cache
+
+    # cache for 5 minutes
+    if time.time() - optimizer_cache["last_update"] < 300:
+        return optimizer_cache["params"]
 
     best = None
     best_score = -999
@@ -97,16 +110,12 @@ def optimize_strategy(df):
                     for i in range(30, len(df)-2):
 
                         if ema_fast.iloc[i] > ema_slow.iloc[i] and rsi.iloc[i] > rb:
-                            entry = closes.iloc[i+1]
-                            exit = closes.iloc[i+2]
-                            if exit > entry:
+                            if closes.iloc[i+2] > closes.iloc[i+1]:
                                 wins += 1
                             trades += 1
 
                         elif ema_fast.iloc[i] < ema_slow.iloc[i] and rsi.iloc[i] < rs:
-                            entry = closes.iloc[i+1]
-                            exit = closes.iloc[i+2]
-                            if exit < entry:
+                            if closes.iloc[i+2] < closes.iloc[i+1]:
                                 wins += 1
                             trades += 1
 
@@ -124,17 +133,20 @@ def optimize_strategy(df):
                             "rsi_sell": rs
                         }
 
-    return best or {"ema_fast":9,"ema_slow":21,"rsi_buy":55,"rsi_sell":45}
+    optimizer_cache["params"] = best
+    optimizer_cache["last_update"] = time.time()
 
-# ---------------- STRATEGY ----------------
+    return best
+
+# ============================================================
+# 🔥 AI SIGNAL ENGINE (UPGRADED)
+# ============================================================
 def evaluate_bot_window(df):
 
     if df is None or len(df) < 50:
         return {"signal": "HOLD", "confidence": 50}
 
     closes = df["close"]
-
-    # 🔥 USE OPTIMIZED SETTINGS
     opt = optimize_strategy(df.tail(200))
 
     ema_fast = closes.ewm(span=opt["ema_fast"]).mean()
@@ -154,29 +166,55 @@ def evaluate_bot_window(df):
     structure = get_structure(df)
     regime = get_market_regime(df)
 
+    # 🔥 MULTI TIMEFRAME CONFIRMATION
+    higher_df = fetch_binance("BTCUSDT", "5m", 200)
+    higher_structure = get_structure(higher_df) if higher_df is not None else "Range"
+
+    score = 0
+
+    # EMA
+    if ema_fast.iloc[-1] > ema_slow.iloc[-1]:
+        score += 25
+    else:
+        score -= 25
+
+    # RSI
+    if rsi_val > opt["rsi_buy"]:
+        score += 20
+    elif rsi_val < opt["rsi_sell"]:
+        score -= 20
+
+    # SMC candle strength
+    if body > rng * 0.6:
+        score += 20
+
+    # Structure alignment
+    if structure == higher_structure:
+        score += 15
+
+    # Regime filter
+    if regime == "Trending":
+        score += 10
+
+    confidence = max(0, min(100, 50 + score))
+
     signal = "HOLD"
-    confidence = 50
-
-    # 🔥 CONFLUENCE ENTRY
-    if structure == "Bullish Structure":
-        if ema_fast.iloc[-1] > ema_slow.iloc[-1] and rsi_val > opt["rsi_buy"] and body > rng * 0.6:
-            signal = "BUY"
-            confidence = 80
-
-    if structure == "Bearish Structure":
-        if ema_fast.iloc[-1] < ema_slow.iloc[-1] and rsi_val < opt["rsi_sell"] and body > rng * 0.6:
-            signal = "SELL"
-            confidence = 80
+    if confidence > 70:
+        signal = "BUY"
+    elif confidence < 30:
+        signal = "SELL"
 
     return {
         "signal": signal,
-        "confidence": confidence,
+        "confidence": round(confidence, 2),
         "structure": structure,
         "regime": regime,
         "optimized": opt
     }
 
-# ---------------- BACKTEST ----------------
+# ============================================================
+# 🔥 BACKTEST (SMART POSITION SIZING)
+# ============================================================
 def run_backtest(df, starting_balance=1000):
 
     balance = starting_balance
@@ -229,7 +267,8 @@ def run_backtest(df, starting_balance=1000):
             result = evaluate_bot_window(df.iloc[:i])
 
             if result["signal"] in ["BUY","SELL"]:
-                entry = df.iloc[i+1]["close"] if i+1 < len(df) else candle["close"]
+
+                entry = df.iloc[i]["close"]
 
                 if result["signal"] == "BUY":
                     sl = entry * 0.99
@@ -238,7 +277,10 @@ def run_backtest(df, starting_balance=1000):
                     sl = entry * 1.01
                     tp = entry - (sl - entry) * 2
 
-                risk = balance * 0.01
+                # 🔥 DYNAMIC POSITION SIZE
+                confidence = result["confidence"] / 100
+                risk = balance * bot_config["base_risk"] * confidence
+
                 size = risk / abs(entry - sl)
 
                 open_trade = {
@@ -262,53 +304,16 @@ def run_backtest(df, starting_balance=1000):
 @app.route("/api/backtest", methods=["POST"])
 def api_backtest():
     data = request.json
-
     symbol = data.get("symbol", "BTCUSDT")
     interval = data.get("interval", "5m")
 
     df = fetch_binance(symbol, interval)
-
     return jsonify(run_backtest(df))
-
-@app.route("/api/optimize")
-def api_optimize():
-    symbol = request.args.get("symbol", "BTCUSDT")
-    df = fetch_binance(symbol, "5m")
-
-    return jsonify(optimize_strategy(df))
-
-# ---------------- CHART ----------------
-@app.route("/api/chart-candles")
-def candles():
-    symbol = request.args.get("symbol", "BTCUSDT")
-    df = fetch_binance(symbol)
-
-    return jsonify([
-        {
-            "time": int(r["time"].timestamp()),
-            "open": r["open"],
-            "high": r["high"],
-            "low": r["low"],
-            "close": r["close"]
-        } for _, r in df.iterrows()
-    ])
 
 # ---------------- PAGES ----------------
 @app.route("/")
 def home():
     return render_template("index.html")
-
-@app.route("/charts")
-def charts():
-    return render_template("charts.html")
-
-@app.route("/analytics")
-def analytics():
-    return render_template("analytics.html")
-
-@app.route("/realtime")
-def realtime():
-    return render_template("realtime.html")
 
 @app.route("/backtester")
 def backtester():
