@@ -1,13 +1,11 @@
 # ============================================================
-# AI Trading Engine (SMC + EMA + RSI + ADVANCED BACKTESTER)
+# AI Trading Engine (SMC + EMA + RSI + SELF-OPTIMIZING)
 # ============================================================
 
 from flask import Flask, render_template, jsonify, request
 from flask_cors import CORS
 import pandas as pd
 import requests
-import sqlite3
-from datetime import datetime
 
 app = Flask(__name__)
 CORS(app)
@@ -31,10 +29,8 @@ def fetch_binance(symbol, interval="1m", limit=500):
             "_","_","_","_","_","_"
         ])
 
-        df["open"] = df["open"].astype(float)
-        df["high"] = df["high"].astype(float)
-        df["low"] = df["low"].astype(float)
-        df["close"] = df["close"].astype(float)
+        for col in ["open","high","low","close"]:
+            df[col] = df[col].astype(float)
 
         df["time"] = pd.to_datetime(df["time"], unit="ms")
 
@@ -42,7 +38,7 @@ def fetch_binance(symbol, interval="1m", limit=500):
     except:
         return None
 
-# ---------------- MARKET LOGIC ----------------
+# ---------------- MARKET ----------------
 def get_structure(df):
     sma20 = df["close"].tail(20).mean()
     if df["close"].iloc[-1] > sma20:
@@ -67,32 +63,93 @@ def get_market_regime(df):
         return "Active"
     return "Range"
 
+# ============================================================
+# 🔥 SELF-OPTIMIZER (KEY UPGRADE)
+# ============================================================
+def optimize_strategy(df):
+
+    best = None
+    best_score = -999
+
+    ema_fast_opts = [7, 9, 12]
+    ema_slow_opts = [20, 21, 30]
+    rsi_buy_opts = [50, 55, 60]
+    rsi_sell_opts = [40, 45, 50]
+
+    closes = df["close"]
+
+    for f in ema_fast_opts:
+        for s in ema_slow_opts:
+            for rb in rsi_buy_opts:
+                for rs in rsi_sell_opts:
+
+                    ema_fast = closes.ewm(span=f).mean()
+                    ema_slow = closes.ewm(span=s).mean()
+
+                    delta = closes.diff()
+                    gain = delta.clip(lower=0).rolling(14).mean()
+                    loss = -delta.clip(upper=0).rolling(14).mean()
+                    rsi = 100 - (100 / (1 + (gain/(loss+1e-9))))
+
+                    wins = 0
+                    trades = 0
+
+                    for i in range(30, len(df)-2):
+
+                        if ema_fast.iloc[i] > ema_slow.iloc[i] and rsi.iloc[i] > rb:
+                            entry = closes.iloc[i+1]
+                            exit = closes.iloc[i+2]
+                            if exit > entry:
+                                wins += 1
+                            trades += 1
+
+                        elif ema_fast.iloc[i] < ema_slow.iloc[i] and rsi.iloc[i] < rs:
+                            entry = closes.iloc[i+1]
+                            exit = closes.iloc[i+2]
+                            if exit < entry:
+                                wins += 1
+                            trades += 1
+
+                    if trades == 0:
+                        continue
+
+                    score = (wins / trades) * trades
+
+                    if score > best_score:
+                        best_score = score
+                        best = {
+                            "ema_fast": f,
+                            "ema_slow": s,
+                            "rsi_buy": rb,
+                            "rsi_sell": rs
+                        }
+
+    return best or {"ema_fast":9,"ema_slow":21,"rsi_buy":55,"rsi_sell":45}
+
 # ---------------- STRATEGY ----------------
 def evaluate_bot_window(df):
 
-    if df is None or len(df) < 30:
+    if df is None or len(df) < 50:
         return {"signal": "HOLD", "confidence": 50}
 
     closes = df["close"]
 
-    latest = closes.iloc[-1]
-    prev = closes.iloc[-2]
+    # 🔥 USE OPTIMIZED SETTINGS
+    opt = optimize_strategy(df.tail(200))
 
-    # EMA
-    ema_fast = closes.ewm(span=9).mean()
-    ema_slow = closes.ewm(span=21).mean()
+    ema_fast = closes.ewm(span=opt["ema_fast"]).mean()
+    ema_slow = closes.ewm(span=opt["ema_slow"]).mean()
 
-    # RSI
     delta = closes.diff()
     gain = delta.clip(lower=0).rolling(14).mean()
     loss = -delta.clip(upper=0).rolling(14).mean()
-    rs = gain / (loss + 1e-9)
-    rsi = 100 - (100 / (1 + rs))
+    rsi = 100 - (100 / (1 + (gain/(loss+1e-9))))
     rsi_val = rsi.iloc[-1]
 
-    # SMC
-    body = abs(df.iloc[-1]["close"] - df.iloc[-1]["open"])
-    rng = df.iloc[-1]["high"] - df.iloc[-1]["low"]
+    latest = df.iloc[-1]
+
+    body = abs(latest["close"] - latest["open"])
+    rng = latest["high"] - latest["low"]
 
     structure = get_structure(df)
     regime = get_market_regime(df)
@@ -100,13 +157,14 @@ def evaluate_bot_window(df):
     signal = "HOLD"
     confidence = 50
 
+    # 🔥 CONFLUENCE ENTRY
     if structure == "Bullish Structure":
-        if ema_fast.iloc[-1] > ema_slow.iloc[-1] and rsi_val > 55 and body > rng * 0.6:
+        if ema_fast.iloc[-1] > ema_slow.iloc[-1] and rsi_val > opt["rsi_buy"] and body > rng * 0.6:
             signal = "BUY"
             confidence = 80
 
     if structure == "Bearish Structure":
-        if ema_fast.iloc[-1] < ema_slow.iloc[-1] and rsi_val < 45 and body > rng * 0.6:
+        if ema_fast.iloc[-1] < ema_slow.iloc[-1] and rsi_val < opt["rsi_sell"] and body > rng * 0.6:
             signal = "SELL"
             confidence = 80
 
@@ -114,22 +172,22 @@ def evaluate_bot_window(df):
         "signal": signal,
         "confidence": confidence,
         "structure": structure,
-        "regime": regime
+        "regime": regime,
+        "optimized": opt
     }
 
-# ---------------- BACKTEST ENGINE ----------------
+# ---------------- BACKTEST ----------------
 def run_backtest(df, starting_balance=1000):
 
     balance = starting_balance
     trades = []
     open_trade = None
 
-    for i in range(30, len(df)):
+    for i in range(50, len(df)):
 
         candle = df.iloc[i]
-        price = candle["close"]
 
-        # ===== MANAGE TRADE =====
+        # manage trade
         if open_trade:
             high = candle["high"]
             low = candle["low"]
@@ -166,13 +224,12 @@ def run_backtest(df, starting_balance=1000):
 
                 open_trade = None
 
-        # ===== OPEN TRADE =====
+        # open trade
         if not open_trade:
             result = evaluate_bot_window(df.iloc[:i])
 
-            if result["signal"] in ["BUY", "SELL"]:
-
-                entry = price
+            if result["signal"] in ["BUY","SELL"]:
+                entry = df.iloc[i+1]["close"] if i+1 < len(df) else candle["close"]
 
                 if result["signal"] == "BUY":
                     sl = entry * 0.99
@@ -211,10 +268,16 @@ def api_backtest():
 
     df = fetch_binance(symbol, interval)
 
-    result = run_backtest(df)
+    return jsonify(run_backtest(df))
 
-    return jsonify(result)
+@app.route("/api/optimize")
+def api_optimize():
+    symbol = request.args.get("symbol", "BTCUSDT")
+    df = fetch_binance(symbol, "5m")
 
+    return jsonify(optimize_strategy(df))
+
+# ---------------- CHART ----------------
 @app.route("/api/chart-candles")
 def candles():
     symbol = request.args.get("symbol", "BTCUSDT")
@@ -247,7 +310,7 @@ def analytics():
 def realtime():
     return render_template("realtime.html")
 
-@app.route("/backtester")  # ✅ FIXED YOUR ERROR
+@app.route("/backtester")
 def backtester():
     return render_template("backtester.html")
 
