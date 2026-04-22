@@ -1079,6 +1079,21 @@
     const themeState = { mode: localStorage.getItem('terminalTheme') || 'dark' };
     const symbols = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT'];
 
+    const sectionLoaded = {
+      dashboardSection: false,
+      chartsSection: false,
+      analyticsSection: false,
+      realtimeSection: false,
+      backtesterSection: false
+    };
+
+    let realtimeSocketStarted = false;
+    let realtimeChartsInitialized = false;
+    let dashboardIntervalId = null;
+    let realtimeIntervalId = null;
+    let alertsIntervalId = null;
+    let chartsIntervalId = null;
+
     function getThemePalette() {
       const light = document.body.classList.contains('light-theme');
       return light
@@ -1118,17 +1133,17 @@
       localStorage.setItem('terminalTheme', mode);
       updateThemeButton();
 
-      if (window.chartPage?.rebuildTheme) {
+      if (window.chartPage?.chart && window.chartPage?.rebuildTheme) {
         chartPage.rebuildTheme();
       }
 
       refreshMiniChartsTheme();
 
-      if (typeof equityChart !== 'undefined' && equityChart) {
+      if (equityChart && sectionLoaded.analyticsSection) {
         loadAnalytics();
       }
 
-      if (typeof tvWidget !== 'undefined') {
+      if (sectionLoaded.backtesterSection) {
         buildTradingViewChart(
           document.getElementById('btSymbol')?.value || 'BTCUSDT',
           document.getElementById('btInterval')?.value || '5m'
@@ -1139,33 +1154,6 @@
     function toggleTheme() {
       applyTheme(themeState.mode === 'dark' ? 'light' : 'dark');
     }
-
-    function switchSection(sectionId) {
-      document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-      document.getElementById(sectionId).classList.add('active');
-      document.querySelectorAll('.nav-link').forEach(btn => btn.classList.toggle('active', btn.dataset.section === sectionId));
-      appState.activeSection = sectionId;
-
-      if (sectionId === 'chartsSection' && window.chartPage?.chart) {
-        setTimeout(() => window.chartPage.resize(), 150);
-      }
-    }
-
-    document.querySelectorAll('.nav-link').forEach(btn => btn.addEventListener('click', () => switchSection(btn.dataset.section)));
-    document.getElementById('goLiveBtn').addEventListener('click', () => switchSection('realtimeSection'));
-    document.getElementById('themeToggleBtn').addEventListener('click', toggleTheme);
-
-    document.getElementById('refreshAllBtn').addEventListener('click', async () => {
-      const map = {
-        dashboardSection: loadDashboard,
-        chartsSection: () => chartPage.refreshAll(),
-        analyticsSection: loadAnalytics,
-        realtimeSection: pollSignalsAndTrades,
-        backtesterSection: () => buildTradingViewChart(document.getElementById('btSymbol').value, document.getElementById('btInterval').value)
-      };
-      const fn = map[appState.activeSection];
-      if (fn) await fn();
-    });
 
     function getSignalClass(signal) {
       const s = (signal || '').toUpperCase();
@@ -1211,6 +1199,7 @@
 
     function playAlert() {
       const audio = document.getElementById('alertSound');
+      if (!audio) return;
       audio.currentTime = 0;
       audio.play().catch(() => {});
     }
@@ -1237,11 +1226,14 @@
       else if (sell > buy && sell > hold) bias = 'Bearish';
       else if (hold >= buy && hold >= sell) bias = 'Wait / Mixed';
 
-      document.getElementById('marketBias').innerText = bias;
+      const el = document.getElementById('marketBias');
+      if (el) el.innerText = bias;
     }
 
     function renderBestTrade(best) {
       const wrap = document.getElementById('bestTradeContent');
+      if (!wrap) return;
+
       if (!best) {
         wrap.innerHTML = `<div class="muted">No strong trade currently selected.</div>`;
         return;
@@ -1270,6 +1262,8 @@
 
     function renderSignals(signals) {
       const container = document.getElementById('signals');
+      if (!container) return;
+
       if (!signals || !signals.length) {
         container.innerHTML = `<div class="muted">No signals available.</div>`;
         return;
@@ -1306,6 +1300,8 @@
 
     function renderHistory(history) {
       const wrap = document.getElementById('historyWrap');
+      if (!wrap) return;
+
       if (!history || !history.length) {
         wrap.innerHTML = `<div class="muted">No trade history yet.</div>`;
         return;
@@ -1336,13 +1332,12 @@
 
     function updateDashboardStats(history, signals, balance = 0) {
       const trades = history.length;
-      let wins = 0, losses = 0, totalPnl = 0, largestWin = 0, largestLoss = 0;
+      let wins = 0, totalPnl = 0, largestWin = 0, largestLoss = 0;
 
       history.forEach(t => {
         const pnl = Number(t.pnl || 0);
         totalPnl += pnl;
         if (pnl > 0) wins++;
-        if (pnl < 0) losses++;
         if (pnl > largestWin) largestWin = pnl;
         if (pnl < largestLoss) largestLoss = pnl;
       });
@@ -1375,7 +1370,10 @@
     function triggerAlert(msg) {
       alertFeedData.unshift(msg);
       if (alertFeedData.length > 8) alertFeedData = alertFeedData.slice(0, 8);
-      document.getElementById('alertFeed').innerHTML = alertFeedData.map(a => `<div class="alert-item">${a}</div>`).join('');
+      const alertFeed = document.getElementById('alertFeed');
+      if (alertFeed) {
+        alertFeed.innerHTML = alertFeedData.map(a => `<div class="alert-item">${a}</div>`).join('');
+      }
       triggerFloatingAlert(msg);
     }
 
@@ -1398,7 +1396,8 @@
         renderBestTrade(bestTrade);
       } catch (err) {
         console.error('Dashboard load error:', err);
-        document.getElementById('signals').innerHTML = `<div class="muted">Failed to load live data.</div>`;
+        const signalsEl = document.getElementById('signals');
+        if (signalsEl) signalsEl.innerHTML = `<div class="muted">Failed to load live data.</div>`;
       }
     }
 
@@ -1476,6 +1475,8 @@
 
     function renderAnalyticsTradeTable(trades) {
       const tbody = document.getElementById('analyticsTradeTableBody');
+      if (!tbody) return;
+
       if (!trades.length) {
         tbody.innerHTML = `<tr><td colspan="7" class="muted">No trades found yet.</td></tr>`;
         return;
@@ -1571,8 +1572,9 @@
       }
 
       function createMainChart() {
-        const palette = getThemePalette();
+        if (chart) return;
 
+        const palette = getThemePalette();
         chart = LightweightCharts.createChart(mainChartEl, {
           width: chartWrap.clientWidth,
           height: chartWrap.clientHeight,
@@ -1596,14 +1598,15 @@
       }
 
       function rebuildTheme() {
-        if (chart) {
-          try { chart.remove(); } catch (e) {}
-        }
+        if (!chart) return;
+        try { chart.remove(); } catch (e) {}
+        chart = null;
+        candleSeries = null;
+        lineSeriesList = [];
         clearHtmlAnnotations();
         createMainChart();
         if (candleData.length) {
           candleSeries.setData(candleData);
-          drawHtmlAnnotations(window.currentAnnotations || []);
         }
         refreshAll();
       }
@@ -1615,6 +1618,7 @@
       }
 
       function clearLineSeries() {
+        if (!chart) return;
         lineSeriesList.forEach(series => {
           try { chart.removeSeries(series); } catch (e) {}
         });
@@ -1622,7 +1626,7 @@
       }
 
       function addHorizontalLine(price, color) {
-        if (!candleData.length) return;
+        if (!candleData.length || !chart) return;
         const series = chart.addLineSeries({
           color,
           lineWidth: 2,
@@ -1717,6 +1721,7 @@
       }
 
       async function loadChart() {
+        createMainChart();
         chartStatusPill.textContent = 'Loading...';
         setDebug(`Loading ${currentSymbol} ${currentInterval}...`);
 
@@ -1843,12 +1848,15 @@
     }
 
     function initMiniCharts() {
+      if (realtimeChartsInitialized) return;
       symbols.forEach(symbol => {
         miniCharts[symbol] = createMiniChart(`chart-${symbol}`);
       });
+      realtimeChartsInitialized = true;
     }
 
     function refreshMiniChartsTheme() {
+      if (!realtimeChartsInitialized) return;
       const palette = getThemePalette();
       symbols.forEach(symbol => {
         const chart = miniCharts[symbol];
@@ -1861,6 +1869,7 @@
 
     function setSignalBadge(symbol, signal) {
       const badge = document.getElementById(`signalBadge-${symbol}`);
+      if (!badge) return;
       badge.textContent = signal;
       badge.classList.remove('signal-buy', 'signal-sell', 'signal-hold');
       if (signal === 'BUY') badge.classList.add('signal-buy');
@@ -1870,8 +1879,9 @@
 
     function updatePrice(symbol, newPrice) {
       const priceEl = document.getElementById(`price-${symbol}`);
-      const prevPrice = rtState[symbol].lastPrice;
+      if (!priceEl) return;
 
+      const prevPrice = rtState[symbol].lastPrice;
       priceEl.textContent = formatPrice(newPrice);
       priceEl.classList.remove('price-up', 'price-down', 'price-neutral');
 
@@ -1884,6 +1894,8 @@
       if (rtState[symbol].prices.length > 30) rtState[symbol].prices.shift();
 
       const chart = miniCharts[symbol];
+      if (!chart) return;
+
       chart.data.labels = rtState[symbol].prices.map((_, i) => i + 1);
       chart.data.datasets[0].data = rtState[symbol].prices;
       chart.data.datasets[0].borderColor = newPrice >= (prevPrice ?? newPrice) ? '#22c55e' : '#ef4444';
@@ -1891,20 +1903,26 @@
     }
 
     function updateSignal(symbol, signal, confidence = 0) {
-      document.getElementById(`signal-${symbol}`).textContent = signal;
-      document.getElementById(`confidenceText-${symbol}`).textContent = `${confidence}%`;
-      document.getElementById(`confidenceBar-${symbol}`).style.width = `${confidence}%`;
+      const signalEl = document.getElementById(`signal-${symbol}`);
+      const confidenceTextEl = document.getElementById(`confidenceText-${symbol}`);
+      const confidenceBarEl = document.getElementById(`confidenceBar-${symbol}`);
+
+      if (signalEl) signalEl.textContent = signal;
+      if (confidenceTextEl) confidenceTextEl.textContent = `${confidence}%`;
+      if (confidenceBarEl) confidenceBarEl.style.width = `${confidence}%`;
       setSignalBadge(symbol, signal);
     }
 
     function updateChange(symbol, changePct) {
       const el = document.getElementById(`change-${symbol}`);
+      if (!el) return;
       el.textContent = `${changePct >= 0 ? '+' : ''}${changePct.toFixed(2)}%`;
       el.className = 'mini-box-value ' + (changePct > 0 ? 'positive' : changePct < 0 ? 'negative' : 'neutral');
     }
 
     function updateSymbolPnl(symbol, pnl) {
       const el = document.getElementById(`pnl-${symbol}`);
+      if (!el) return;
       el.textContent = formatMoney(pnl);
       el.className = 'mini-box-value ' + (pnl > 0 ? 'positive' : pnl < 0 ? 'negative' : 'neutral');
     }
@@ -1925,6 +1943,8 @@
 
     function renderLiveTrades(trades) {
       const tbody = document.getElementById('liveTradesTable');
+      if (!tbody) return;
+
       if (!trades?.length) {
         tbody.innerHTML = `<tr><td colspan="5">No open trades yet</td></tr>`;
         updateRealtimeStats([]);
@@ -1949,11 +1969,16 @@
 
     function addFeedItem(containerId, text, type = 'info') {
       const container = document.getElementById(containerId);
+      if (!container) return;
+
       const item = document.createElement('div');
       item.className = `feed-item ${type}`;
       item.innerHTML = `<div class="feed-time">${new Date().toLocaleTimeString()}</div><div class="feed-text">${text}</div>`;
       container.prepend(item);
-      while (container.children.length > 12) container.removeChild(container.lastChild);
+
+      while (container.children.length > 12) {
+        container.removeChild(container.lastChild);
+      }
     }
 
     async function fetchLiveTrades() {
@@ -1986,6 +2011,9 @@
     }
 
     function connectBinanceWebSocket() {
+      if (realtimeSocketStarted) return;
+      realtimeSocketStarted = true;
+
       const streamNames = symbols.map(s => s.toLowerCase() + '@trade').join('/');
       const ws = new WebSocket(`wss://stream.binance.com:9443/stream?streams=${streamNames}`);
 
@@ -2001,6 +2029,7 @@
       };
 
       ws.onclose = () => {
+        realtimeSocketStarted = false;
         addFeedItem('realtimeAlertFeed', 'WebSocket disconnected. Reconnecting...', 'sell');
         setTimeout(connectBinanceWebSocket, 3000);
       };
@@ -2027,6 +2056,8 @@
     }
 
     function seedDemoSignals() {
+      if (!realtimeChartsInitialized) return;
+
       updateSignal('BTCUSDT', 'BUY', 82);
       updateSignal('ETHUSDT', 'HOLD', 61);
       updateSignal('BNBUSDT', 'SELL', 74);
@@ -2044,6 +2075,7 @@
       const palette = getThemePalette();
       const map = { '1m':'1', '5m':'5', '15m':'15', '1h':'60', '4h':'240' };
       const container = document.getElementById('tvChart');
+      if (!container) return;
       container.innerHTML = '';
 
       tvWidget = new TradingView.widget({
@@ -2080,10 +2112,10 @@
       bestTradeEl.textContent = formatMoney(summary.best_trade);
 
       setMoneyClass(netPnlEl, summary.net_pnl);
-      setMoneyClass(finalBalanceEl, summary.final_balance - summary.starting_balance);
+      setMoneyClass(finalBalanceEl, (summary.final_balance || 0) - (summary.starting_balance || 0));
       setMoneyClass(bestTradeEl, summary.best_trade);
 
-      document.getElementById('totalTrades').textContent = summary.total_trades;
+      document.getElementById('totalTrades').textContent = summary.total_trades ?? 0;
       document.getElementById('backtestWinRate').textContent = `${Number(summary.win_rate || 0).toFixed(2)}%`;
     }
 
@@ -2115,6 +2147,8 @@
 
     function renderBacktestTrades(trades) {
       const body = document.getElementById('tradeTableBody');
+      if (!body) return;
+
       if (!trades.length) {
         body.innerHTML = `<tr><td colspan="10">No trades found for this backtest.</td></tr>`;
         return;
@@ -2245,8 +2279,16 @@
     }
 
     document.getElementById('runBacktestBtn').addEventListener('click', runBacktest);
-    document.getElementById('btSymbol').addEventListener('change', () => buildTradingViewChart(document.getElementById('btSymbol').value, document.getElementById('btInterval').value));
-    document.getElementById('btInterval').addEventListener('change', () => buildTradingViewChart(document.getElementById('btSymbol').value, document.getElementById('btInterval').value));
+    document.getElementById('btSymbol').addEventListener('change', () => {
+      if (sectionLoaded.backtesterSection) {
+        buildTradingViewChart(document.getElementById('btSymbol').value, document.getElementById('btInterval').value);
+      }
+    });
+    document.getElementById('btInterval').addEventListener('change', () => {
+      if (sectionLoaded.backtesterSection) {
+        buildTradingViewChart(document.getElementById('btSymbol').value, document.getElementById('btInterval').value);
+      }
+    });
 
     document.getElementById('fullscreenBacktestBtn').addEventListener('click', () => {
       const chart = document.getElementById('tvChart');
@@ -2254,22 +2296,102 @@
       else document.exitFullscreen();
     });
 
-    applyTheme(themeState.mode);
-    chartPage.createMainChart();
-    initMiniCharts();
-    buildTradingViewChart();
-    resetBacktestOutputs();
-    seedDemoSignals();
-    connectBinanceWebSocket();
-    loadDashboard();
-    loadAnalytics();
-    chartPage.refreshAll();
-    pollSignalsAndTrades();
+    function startSectionIntervals() {
+      if (!dashboardIntervalId) {
+        dashboardIntervalId = setInterval(() => {
+          if (appState.activeSection === 'dashboardSection') loadDashboard();
+        }, 3000);
+      }
 
-    setInterval(loadDashboard, 3000);
-    setInterval(pollSignalsAndTrades, 5000);
-    setInterval(pollAlerts, 7000);
-    setInterval(() => chartPage.refreshAll(), 15000);
+      if (!realtimeIntervalId) {
+        realtimeIntervalId = setInterval(() => {
+          if (appState.activeSection === 'realtimeSection') pollSignalsAndTrades();
+        }, 5000);
+      }
+
+      if (!alertsIntervalId) {
+        alertsIntervalId = setInterval(() => {
+          if (appState.activeSection === 'realtimeSection') pollAlerts();
+        }, 7000);
+      }
+
+      if (!chartsIntervalId) {
+        chartsIntervalId = setInterval(() => {
+          if (appState.activeSection === 'chartsSection') chartPage.refreshAll();
+        }, 15000);
+      }
+    }
+
+    async function loadSectionIfNeeded(sectionId) {
+      if (sectionLoaded[sectionId]) {
+        if (sectionId === 'chartsSection' && window.chartPage?.chart) {
+          setTimeout(() => window.chartPage.resize(), 150);
+        }
+        return;
+      }
+
+      if (sectionId === 'dashboardSection') {
+        await loadDashboard();
+      }
+
+      if (sectionId === 'chartsSection') {
+        chartPage.createMainChart();
+        await chartPage.refreshAll();
+        setTimeout(() => chartPage.resize(), 150);
+      }
+
+      if (sectionId === 'analyticsSection') {
+        await loadAnalytics();
+      }
+
+      if (sectionId === 'realtimeSection') {
+        initMiniCharts();
+        seedDemoSignals();
+        connectBinanceWebSocket();
+        await pollSignalsAndTrades();
+      }
+
+      if (sectionId === 'backtesterSection') {
+        resetBacktestOutputs();
+        buildTradingViewChart(
+          document.getElementById('btSymbol').value,
+          document.getElementById('btInterval').value
+        );
+      }
+
+      sectionLoaded[sectionId] = true;
+    }
+
+    async function switchSection(sectionId) {
+      document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+      document.getElementById(sectionId).classList.add('active');
+      document.querySelectorAll('.nav-link').forEach(btn => btn.classList.toggle('active', btn.dataset.section === sectionId));
+      appState.activeSection = sectionId;
+      await loadSectionIfNeeded(sectionId);
+    }
+
+    document.querySelectorAll('.nav-link').forEach(btn => btn.addEventListener('click', () => switchSection(btn.dataset.section)));
+    document.getElementById('goLiveBtn').addEventListener('click', () => switchSection('realtimeSection'));
+    document.getElementById('themeToggleBtn').addEventListener('click', toggleTheme);
+
+    document.getElementById('refreshAllBtn').addEventListener('click', async () => {
+      const map = {
+        dashboardSection: loadDashboard,
+        chartsSection: () => chartPage.refreshAll(),
+        analyticsSection: loadAnalytics,
+        realtimeSection: pollSignalsAndTrades,
+        backtesterSection: () => buildTradingViewChart(
+          document.getElementById('btSymbol').value,
+          document.getElementById('btInterval').value
+        )
+      };
+      const fn = map[appState.activeSection];
+      if (fn) await fn();
+    });
+
+    applyTheme(themeState.mode);
+    startSectionIntervals();
+    loadSectionIfNeeded('dashboardSection');
   </script>
 </body>
 </html>
