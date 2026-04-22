@@ -10,9 +10,12 @@ import requests
 import time
 from datetime import datetime
 
-app = Flask(__name__, template_folder="/mnt/data")
+app = Flask(__name__, template_folder="templates")
 CORS(app)
 
+@app.route("/")
+def home():
+    return render_template("preview.html")
 # ============================================================
 # CONFIG
 # ============================================================
