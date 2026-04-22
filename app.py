@@ -1287,14 +1287,29 @@ def get_equity_payload():
 # ---------------- API ROUTES ----------------
 @app.route("/signal")
 def signal():
-    all_signals = refresh_engine()
     history = get_trade_history(limit=20)
+
+    all_signals = []
+    for symbol in bot_config["symbols"]:
+        cached = runtime_cache["signals"].get(symbol)
+        if cached:
+            all_signals.append({
+                "symbol": cached["symbol"],
+                "signal": cached["signal"],
+                "live_price": cached["price"],
+                "confidence": cached["confidence"],
+                "bias": cached["bias"],
+                "structure": cached["structure"],
+                "regime": cached["regime"],
+                "trade_idea": cached["trade_idea"]
+            })
+
     return jsonify({
         "balance": get_paper_balance(),
         "all_signals": all_signals,
-        "history": history
+        "history": history,
+        "last_update": runtime_cache.get("last_update")
     })
-
 
 @app.route("/signals")
 def signals():
