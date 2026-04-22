@@ -567,24 +567,8 @@ def build_chart_overlays(df, symbol="BTCUSDT", interval="1m"):
 # ============================================================
 @app.route("/")
 def home():
-    return render_template("unified_trading_terminal.html")
-
-@app.route("/backtester")
-def backtester_page():
-    return render_template("unified_trading_terminal.html")
-
-@app.route("/charts")
-def charts_page():
-    return render_template("unified_trading_terminal.html")
-
-@app.route("/analytics")
-def analytics_page():
-    return render_template("unified_trading_terminal.html")
-
-@app.route("/realtime")
-def realtime_page():
-    return render_template("unified_trading_terminal.html")
-
+    return render_template("preview.html")
+    
 
 # ============================================================
 # API FOR UNIFIED HTML
