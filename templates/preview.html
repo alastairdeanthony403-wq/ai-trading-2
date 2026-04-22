@@ -1,16 +1,13 @@
 <script>
-/* ================= SAFE DOM HELPERS ================= */
-function el(id) {
-  return document.getElementById(id);
-}
+document.addEventListener("DOMContentLoaded", () => {
 
 /* ================= NAV ================= */
 const pages = ["dashboard", "charts", "analytics", "realtime", "backtester"];
 
 function showPage(page) {
   pages.forEach(p => {
-    const pageEl = el(`page-${p}`);
-    if (pageEl) pageEl.classList.toggle("active", p === page);
+    const el = document.getElementById(`page-${p}`);
+    if (el) el.classList.toggle("active", p === page);
   });
 
   document.querySelectorAll(".nav-link").forEach(btn => {
@@ -18,21 +15,19 @@ function showPage(page) {
   });
 
   setTimeout(() => {
-    if (page === "charts") safeLoadMainChart();
-    if (page === "backtester") safeLoadBacktestChart();
+    if (page === "charts") loadMainChart();
+    if (page === "backtester") loadBacktestChartData();
   }, 300);
 
   history.replaceState(null, "", page === "dashboard" ? "/" : `/${page}`);
 }
 
-/* Attach nav safely */
-document.addEventListener("DOMContentLoaded", () => {
-  document.querySelectorAll(".nav-link").forEach(btn => {
-    btn.addEventListener("click", () => showPage(btn.dataset.page));
-  });
+/* Attach nav AFTER DOM is ready */
+document.querySelectorAll(".nav-link").forEach(btn => {
+  btn.addEventListener("click", () => showPage(btn.dataset.page));
 });
 
-/* ================= FETCH ================= */
+/* ================= HELPERS ================= */
 async function fetchJSON(url, options) {
   try {
     const res = await fetch(url, options);
@@ -40,7 +35,6 @@ async function fetchJSON(url, options) {
     const data = text ? JSON.parse(text) : {};
 
     if (!res.ok) throw new Error(data.error || "API error");
-
     return data;
   } catch (err) {
     console.error("API ERROR:", url, err);
@@ -48,164 +42,114 @@ async function fetchJSON(url, options) {
   }
 }
 
-/* ================= CHART ================= */
-let mainChart = null;
-let mainSeries = null;
+/* ================= CHARTS ================= */
+let mainChart, mainSeries;
 
 function createMainChart() {
-  const container = el("mainChart");
-  if (!container || typeof LightweightCharts === "undefined") {
-    console.warn("Chart container or lib missing");
-    return;
-  }
+  const el = document.getElementById("mainChart");
+  if (!el) return;
 
-  container.innerHTML = "";
+  el.innerHTML = "";
 
-  mainChart = LightweightCharts.createChart(container, {
-    width: container.clientWidth || 800,
+  mainChart = LightweightCharts.createChart(el, {
+    width: el.clientWidth || 800,
     height: 560,
-    layout: { background: { color: "#0f172a" }, textColor: "#cbd5e1" },
-    grid: {
-      vertLines: { color: "rgba(255,255,255,0.05)" },
-      horzLines: { color: "rgba(255,255,255,0.05)" }
-    }
+    layout: { background: { color: "#0f172a" }, textColor: "#cbd5e1" }
   });
 
   mainSeries = mainChart.addCandlestickSeries();
 
   window.addEventListener("resize", () => {
-    if (mainChart) {
-      mainChart.applyOptions({ width: container.clientWidth });
-    }
+    if (mainChart) mainChart.applyOptions({ width: el.clientWidth });
   });
 }
 
 async function loadMainChart() {
   if (!mainSeries) return;
 
-  const symbol = el("chartSymbol")?.value || "BTCUSDT";
-  const interval = el("chartInterval")?.value || "1m";
+  const symbolEl = document.getElementById("chartSymbol");
+  const intervalEl = document.getElementById("chartInterval");
+
+  if (!symbolEl || !intervalEl) return;
 
   const res = await fetchJSON(
-    `/api/chart-candles?symbol=${symbol}&interval=${interval}&limit=150`
+    `/api/chart-candles?symbol=${symbolEl.value}&interval=${intervalEl.value}&limit=150`
   );
 
-  const candles = res.data || [];
-
-  if (!candles.length) {
-    console.warn("No candles");
-    return;
-  }
-
-  mainSeries.setData(candles);
-  mainChart.timeScale().fitContent();
-}
-
-/* SAFE wrapper (prevents crash on Render) */
-function safeLoadMainChart() {
-  try {
-    if (!mainChart) createMainChart();
-    loadMainChart();
-  } catch (e) {
-    console.error("Main chart failed:", e);
+  if (res.data?.length) {
+    mainSeries.setData(res.data);
+    mainChart.timeScale().fitContent();
   }
 }
 
-/* ================= BACKTEST CHART ================= */
-let btChart = null;
-let btSeries = null;
+/* ================= BACKTEST ================= */
+let btChart, btSeries;
 
 function createBacktestChart() {
-  const container = el("btChart");
-  if (!container || typeof LightweightCharts === "undefined") {
-    console.warn("Backtest chart container missing");
-    return;
-  }
+  const el = document.getElementById("btChart");
+  if (!el) return;
 
-  container.innerHTML = "";
+  el.innerHTML = "";
 
-  btChart = LightweightCharts.createChart(container, {
-    width: container.clientWidth || 800,
+  btChart = LightweightCharts.createChart(el, {
+    width: el.clientWidth || 800,
     height: 580,
     layout: { background: { color: "#0f172a" }, textColor: "#cbd5e1" }
   });
 
   btSeries = btChart.addCandlestickSeries();
-
-  window.addEventListener("resize", () => {
-    if (btChart) {
-      btChart.applyOptions({ width: container.clientWidth });
-    }
-  });
 }
 
 async function loadBacktestChartData() {
   if (!btSeries) return;
 
-  const symbol = el("btSymbol")?.value || "BTCUSDT";
-  const interval = el("btInterval")?.value || "5m";
+  const symbolEl = document.getElementById("btSymbol");
+  const intervalEl = document.getElementById("btInterval");
+
+  if (!symbolEl || !intervalEl) return;
 
   const res = await fetchJSON(
-    `/api/chart-candles?symbol=${symbol}&interval=${interval}&limit=150`
+    `/api/chart-candles?symbol=${symbolEl.value}&interval=${intervalEl.value}&limit=150`
   );
 
-  const candles = res.data || [];
-
-  if (!candles.length) return;
-
-  btSeries.setData(candles);
-  btChart.timeScale().fitContent();
-}
-
-function safeLoadBacktestChart() {
-  try {
-    if (!btChart) createBacktestChart();
-    loadBacktestChartData();
-  } catch (e) {
-    console.error("Backtest chart failed:", e);
+  if (res.data?.length) {
+    btSeries.setData(res.data);
+    btChart.timeScale().fitContent();
   }
 }
 
-/* ================= BACKTEST ================= */
 async function runBacktest() {
-  const btn = el("runBacktestBtn");
-  if (btn) btn.disabled = true;
+  const btn = document.getElementById("runBacktestBtn");
+  if (!btn) return;
+
+  btn.disabled = true;
 
   try {
-    const res = await fetchJSON("/api/backtest", {
+    await fetchJSON("/api/backtest", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        symbol: el("btSymbol")?.value || "BTCUSDT",
-        interval: el("btInterval")?.value || "5m",
-        limit: Number(el("btLimit")?.value || 200),
-        strategy: el("btStrategy")?.value || "bot",
-        starting_balance: Number(el("btStartingBalance")?.value || 1000)
+        symbol: document.getElementById("btSymbol")?.value,
+        interval: document.getElementById("btInterval")?.value,
+        limit: Number(document.getElementById("btLimit")?.value),
+        strategy: document.getElementById("btStrategy")?.value,
+        starting_balance: Number(document.getElementById("btStartingBalance")?.value)
       })
     });
-
-    console.log("Backtest result:", res);
-
   } catch (err) {
-    console.error("Backtest failed:", err);
+    console.error(err);
   }
 
-  if (btn) btn.disabled = false;
+  btn.disabled = false;
 }
 
 /* ================= INIT ================= */
-document.addEventListener("DOMContentLoaded", async () => {
-  try {
-    createMainChart();
-    createBacktestChart();
+createMainChart();
+createBacktestChart();
+loadMainChart();
 
-    await loadMainChart();
+document.getElementById("chartRefreshBtn")?.addEventListener("click", loadMainChart);
+document.getElementById("runBacktestBtn")?.addEventListener("click", runBacktest);
 
-    el("chartRefreshBtn")?.addEventListener("click", loadMainChart);
-    el("runBacktestBtn")?.addEventListener("click", runBacktest);
-
-  } catch (e) {
-    console.error("INIT ERROR:", e);
-  }
 });
 </script>
