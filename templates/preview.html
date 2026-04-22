@@ -1,6 +1,5 @@
 <script>
-/* ================= NAV ================= */
-const pages = ["dashboard", "charts", "analytics", "realtime", "backtester"];
+const pages = ["dashboard","charts","analytics","realtime","backtester"];
 
 function showPage(page) {
   pages.forEach(p => {
@@ -11,36 +10,32 @@ function showPage(page) {
     btn.classList.toggle("active", btn.dataset.page === page);
   });
 
-  // 🔥 FIX: re-render charts when switching
   setTimeout(() => {
     if (page === "charts") loadMainChart();
     if (page === "backtester") loadBacktestChartData();
   }, 300);
-
-  history.replaceState(null, "", page === "dashboard" ? "/" : `/${page}`);
 }
 
-document.querySelectorAll(".nav-link").forEach(btn => {
-  btn.addEventListener("click", () => showPage(btn.dataset.page));
-});
-
-/* ================= HELPERS ================= */
+/* ================= SAFE FETCH ================= */
 async function fetchJSON(url, options) {
   try {
     const res = await fetch(url, options);
-    const text = await res.text();
-    const data = text ? JSON.parse(text) : {};
 
-    if (!res.ok) throw new Error(data.error || "API error");
+    if (!res.ok) {
+      const txt = await res.text();
+      console.error("API ERROR:", txt);
+      throw new Error(txt);
+    }
 
-    return data;
+    return await res.json();
+
   } catch (err) {
-    console.error("API ERROR:", url, err);
-    return {};
+    console.error("FETCH FAIL:", url, err);
+    return { data: [] };
   }
 }
 
-/* ================= CHARTS ================= */
+/* ================= CHART ================= */
 let mainChart, mainSeries;
 
 function createMainChart() {
@@ -50,11 +45,7 @@ function createMainChart() {
   mainChart = LightweightCharts.createChart(el, {
     width: el.clientWidth || 800,
     height: 560,
-    layout: { background: { color: "#0f172a" }, textColor: "#cbd5e1" },
-    grid: {
-      vertLines: { color: "rgba(255,255,255,0.05)" },
-      horzLines: { color: "rgba(255,255,255,0.05)" }
-    }
+    layout: { background: { color: "#0f172a" }, textColor: "#cbd5e1" }
   });
 
   mainSeries = mainChart.addCandlestickSeries();
@@ -65,27 +56,29 @@ function createMainChart() {
 }
 
 async function loadMainChart() {
-  try {
-    const symbol = document.getElementById("chartSymbol").value;
-    const interval = document.getElementById("chartInterval").value;
+  const symbol = document.getElementById("chartSymbol").value;
+  const interval = document.getElementById("chartInterval").value;
 
-    const res = await fetchJSON(
-      `/api/chart-candles?symbol=${symbol}&interval=${interval}&limit=150`
-    );
+  const res = await fetchJSON(
+    `/api/chart-candles?symbol=${symbol}&interval=${interval}&limit=150`
+  );
 
-    const candles = res.data || [];
+  // 🔥 CRITICAL FIX
+  const candles = (res.data || []).map(c => ({
+    time: Number(c.time),           // MUST be seconds
+    open: Number(c.open),
+    high: Number(c.high),
+    low: Number(c.low),
+    close: Number(c.close)
+  }));
 
-    if (!candles.length) {
-      console.warn("No candle data received");
-      return;
-    }
-
-    mainSeries.setData(candles);
-    mainChart.timeScale().fitContent();
-
-  } catch (err) {
-    console.error("Chart load failed:", err);
+  if (!candles.length) {
+    console.warn("No candles received");
+    return;
   }
+
+  mainSeries.setData(candles);
+  mainChart.timeScale().fitContent();
 }
 
 /* ================= BACKTEST CHART ================= */
@@ -116,7 +109,13 @@ async function loadBacktestChartData() {
     `/api/chart-candles?symbol=${symbol}&interval=${interval}&limit=150`
   );
 
-  const candles = res.data || [];
+  const candles = (res.data || []).map(c => ({
+    time: Number(c.time),
+    open: Number(c.open),
+    high: Number(c.high),
+    low: Number(c.low),
+    close: Number(c.close)
+  }));
 
   if (!candles.length) return;
 
@@ -132,22 +131,19 @@ async function runBacktest() {
   try {
     const res = await fetchJSON("/api/backtest", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         symbol: document.getElementById("btSymbol").value,
         interval: document.getElementById("btInterval").value,
         limit: Number(document.getElementById("btLimit").value),
-        strategy: document.getElementById("btStrategy").value,
         starting_balance: Number(document.getElementById("btStartingBalance").value)
       })
     });
 
-    console.log("Backtest result:", res);
+    console.log("BACKTEST:", res);
 
   } catch (err) {
-    console.error("Backtest failed:", err);
+    console.error(err);
   }
 
   btn.disabled = false;
@@ -155,8 +151,10 @@ async function runBacktest() {
 
 /* ================= INIT ================= */
 document.addEventListener("DOMContentLoaded", async () => {
-  createMainChart();
-  createBacktestChart();
+  setTimeout(() => {
+    createMainChart();
+    createBacktestChart();
+  }, 200); // 🔥 FIX for Render
 
   await loadMainChart();
 
