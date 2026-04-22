@@ -182,7 +182,10 @@
 
       <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
         <div class="glass p-4 xl:col-span-2">
-          <h2 class="text-xl font-bold mb-4">Live Signals</h2>
+          <div class="flex items-center justify-between mb-4">
+            <h2 class="text-xl font-bold">Live Signals</h2>
+            <div class="text-xs text-slate-400" id="dashboardLastUpdate">Waiting for engine refresh...</div>
+          </div>
           <div id="dashboardSignals" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
         </div>
 
@@ -343,8 +346,7 @@
             <select id="btLimit" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white">
               <option value="100">100</option>
               <option value="200" selected>200</option>
-              <option value="500">500</option>
-              <option value="1000">1000</option>
+              <option value="300">300</option>
             </select>
           </div>
 
@@ -447,13 +449,16 @@
   <script>
     // ---------------- NAV ----------------
     const pages = ["dashboard", "charts", "analytics", "realtime", "backtester"];
+
     function showPage(page) {
       pages.forEach(p => {
         document.getElementById(`page-${p}`).classList.toggle("active", p === page);
       });
+
       document.querySelectorAll(".nav-link").forEach(btn => {
         btn.classList.toggle("active", btn.dataset.page === page);
       });
+
       history.replaceState(null, "", page === "dashboard" ? "/" : `/${page}`);
     }
 
@@ -483,6 +488,19 @@
         throw new Error(data.error || `Request failed (${res.status})`);
       }
       return data;
+    }
+
+    async function refreshEngineCache() {
+      try {
+        const data = await fetchJSON("/refresh-engine");
+        document.getElementById("dashboardLastUpdate").textContent =
+          data.last_update ? `Last engine refresh: ${data.last_update}` : "Engine refreshed";
+        return data;
+      } catch (err) {
+        console.error("Engine refresh failed:", err);
+        document.getElementById("dashboardLastUpdate").textContent = "Engine refresh failed";
+        return null;
+      }
     }
 
     // ---------------- DASHBOARD ----------------
@@ -524,6 +542,7 @@
     async function loadDashboard() {
       const data = await fetchJSON("/signal");
       const stats = await fetchJSON("/stats");
+      const alerts = await fetchJSON("/alerts");
 
       document.getElementById("dashBalance").textContent = formatMoney(data.balance || 0);
       document.getElementById("dashWinRate").textContent = `${Number(stats.win_rate || 0).toFixed(1)}%`;
@@ -536,17 +555,21 @@
         : 0;
       document.getElementById("dashBestSignal").textContent = `${bestConfidence.toFixed(0)}%`;
 
+      if (data.last_update) {
+        document.getElementById("dashboardLastUpdate").textContent = `Last engine refresh: ${data.last_update}`;
+      }
+
       renderDashboardSignals(data.all_signals || []);
-      const alerts = await fetchJSON("/alerts");
       renderAlertFeed("dashboardAlerts", alerts);
     }
 
     // ---------------- CHARTS PAGE ----------------
-    let mainChart, mainCandleSeries, mainMarkerData = [], mainLineSeries = [];
+    let mainChart, mainCandleSeries, mainLineSeries = [];
 
     function createMainChart() {
       const container = document.getElementById("mainChart");
       container.innerHTML = "";
+
       mainChart = LightweightCharts.createChart(container, {
         width: container.clientWidth,
         height: 560,
@@ -591,6 +614,10 @@
     }
 
     function addMainHorizontalLine(price, color) {
+      const firstTime = window._mainCandles?.[0]?.time;
+      const lastTime = window._mainCandles?.[window._mainCandles.length - 1]?.time;
+      if (firstTime == null || lastTime == null) return;
+
       const series = mainChart.addLineSeries({
         color,
         lineWidth: 2,
@@ -599,15 +626,11 @@
         crosshairMarkerVisible: false
       });
 
-      const candles = mainCandleSeries.dataByIndex ? [] : null;
-      const firstTime = window._mainCandles?.[0]?.time;
-      const lastTime = window._mainCandles?.[window._mainCandles.length - 1]?.time;
-      if (firstTime == null || lastTime == null) return;
-
       series.setData([
         { time: firstTime, value: price },
         { time: lastTime, value: price }
       ]);
+
       mainLineSeries.push(series);
     }
 
@@ -615,19 +638,21 @@
       const symbol = document.getElementById("chartSymbol").value;
       const interval = document.getElementById("chartInterval").value;
 
-      const candleRes = await fetchJSON(`/api/chart-candles?symbol=${symbol}&interval=${interval}&limit=200`);
-      const overlayRes = await fetchJSON(`/api/chart-overlays?symbol=${symbol}&interval=${interval}&limit=200`);
+      const candleRes = await fetchJSON(`/api/chart-candles?symbol=${symbol}&interval=${interval}&limit=120`);
+      const overlayRes = await fetchJSON(`/api/chart-overlays?symbol=${symbol}&interval=${interval}&limit=120`);
 
       const candles = candleRes.data || [];
       const overlays = overlayRes.data || {};
       window._mainCandles = candles;
 
       mainCandleSeries.setData(candles);
+
       if (typeof mainCandleSeries.setMarkers === "function") {
         mainCandleSeries.setMarkers(overlays.markers || []);
       }
 
       clearMainLines();
+
       (overlays.trade_levels || []).forEach(level => {
         addMainHorizontalLine(level.entry, level.side === "BUY" ? "#22c55e" : "#ef4444");
         addMainHorizontalLine(level.sl, "#f59e0b");
@@ -680,6 +705,7 @@
 
       const ctx = document.getElementById("equityChart").getContext("2d");
       if (equityChart) equityChart.destroy();
+
       equityChart = new Chart(ctx, {
         type: "line",
         data: {
@@ -709,7 +735,7 @@
     // ---------------- REALTIME ----------------
     async function loadRealtime() {
       const openTrades = await fetchJSON("/live_trades");
-      const signalsPayload = await fetchJSON("/signal");
+      const signalMap = await fetchJSON("/signals");
       const alerts = await fetchJSON("/alerts");
 
       const totalPnl = (openTrades || []).reduce((sum, t) => sum + Number(t.pnl || 0), 0);
@@ -717,10 +743,18 @@
       document.getElementById("rtTotalLivePnl").className = `text-2xl font-bold mt-2 ${totalPnl >= 0 ? "positive" : "negative"}`;
       document.getElementById("rtOpenTradesCount").textContent = (openTrades || []).length;
 
-      const bestSignal = signalsPayload.all_signals?.length
-        ? [...signalsPayload.all_signals].sort((a, b) => Number(b.confidence || 0) - Number(a.confidence || 0))[0]
+      const signalEntries = Object.entries(signalMap || {}).map(([symbol, val]) => ({
+        symbol,
+        signal: val.signal,
+        confidence: Number(val.confidence || 0)
+      }));
+
+      const bestSignal = signalEntries.length
+        ? [...signalEntries].sort((a, b) => b.confidence - a.confidence)[0]
         : null;
-      document.getElementById("rtBestSignal").textContent = bestSignal ? `${bestSignal.symbol} ${bestSignal.signal}` : "--";
+
+      document.getElementById("rtBestSignal").textContent =
+        bestSignal ? `${bestSignal.symbol} ${bestSignal.signal}` : "--";
 
       const tbody = document.getElementById("realtimeTrades");
       if (!openTrades.length) {
@@ -746,6 +780,7 @@
     function createBacktestChart() {
       const container = document.getElementById("btChart");
       container.innerHTML = "";
+
       btChart = LightweightCharts.createChart(container, {
         width: container.clientWidth,
         height: 580,
@@ -806,6 +841,7 @@
         { time: firstTime, value: price },
         { time: lastTime, value: price }
       ]);
+
       btLineSeries.push(series);
     }
 
@@ -915,14 +951,15 @@
       const symbol = document.getElementById("btSymbol").value;
       const interval = document.getElementById("btInterval").value;
 
-      const candleRes = await fetchJSON(`/api/chart-candles?symbol=${symbol}&interval=${interval}&limit=200`);
-      const overlayRes = await fetchJSON(`/api/chart-overlays?symbol=${symbol}&interval=${interval}&limit=200`);
+      const candleRes = await fetchJSON(`/api/chart-candles?symbol=${symbol}&interval=${interval}&limit=120`);
+      const overlayRes = await fetchJSON(`/api/chart-overlays?symbol=${symbol}&interval=${interval}&limit=120`);
 
       const candles = candleRes.data || [];
       const overlays = overlayRes.data || {};
       window._btCandles = candles;
 
       btCandleSeries.setData(candles);
+
       if (typeof btCandleSeries.setMarkers === "function") {
         btCandleSeries.setMarkers(overlays.markers || []);
       }
@@ -1001,6 +1038,8 @@
       createMainChart();
       createBacktestChart();
 
+      await refreshEngineCache();
+
       await Promise.all([
         loadDashboard().catch(console.error),
         loadMainChart().catch(console.error),
@@ -1008,9 +1047,10 @@
         loadRealtime().catch(console.error)
       ]);
 
-      setInterval(() => loadDashboard().catch(console.error), 8000);
-      setInterval(() => loadRealtime().catch(console.error), 5000);
-      setInterval(() => loadAnalytics().catch(console.error), 15000);
+      setInterval(() => refreshEngineCache().catch(console.error), 15000);
+      setInterval(() => loadDashboard().catch(console.error), 20000);
+      setInterval(() => loadRealtime().catch(console.error), 10000);
+      setInterval(() => loadAnalytics().catch(console.error), 30000);
     });
   </script>
 </body>
