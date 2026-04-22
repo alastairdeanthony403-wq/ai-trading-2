@@ -1,9 +1,16 @@
 <script>
-const pages = ["dashboard","charts","analytics","realtime","backtester"];
+/* ================= SAFE DOM HELPERS ================= */
+function el(id) {
+  return document.getElementById(id);
+}
+
+/* ================= NAV ================= */
+const pages = ["dashboard", "charts", "analytics", "realtime", "backtester"];
 
 function showPage(page) {
   pages.forEach(p => {
-    document.getElementById(`page-${p}`).classList.toggle("active", p === page);
+    const pageEl = el(`page-${p}`);
+    if (pageEl) pageEl.classList.toggle("active", p === page);
   });
 
   document.querySelectorAll(".nav-link").forEach(btn => {
@@ -11,69 +18,82 @@ function showPage(page) {
   });
 
   setTimeout(() => {
-    if (page === "charts") loadMainChart();
-    if (page === "backtester") loadBacktestChartData();
+    if (page === "charts") safeLoadMainChart();
+    if (page === "backtester") safeLoadBacktestChart();
   }, 300);
+
+  history.replaceState(null, "", page === "dashboard" ? "/" : `/${page}`);
 }
 
-/* ================= SAFE FETCH ================= */
+/* Attach nav safely */
+document.addEventListener("DOMContentLoaded", () => {
+  document.querySelectorAll(".nav-link").forEach(btn => {
+    btn.addEventListener("click", () => showPage(btn.dataset.page));
+  });
+});
+
+/* ================= FETCH ================= */
 async function fetchJSON(url, options) {
   try {
     const res = await fetch(url, options);
+    const text = await res.text();
+    const data = text ? JSON.parse(text) : {};
 
-    if (!res.ok) {
-      const txt = await res.text();
-      console.error("API ERROR:", txt);
-      throw new Error(txt);
-    }
+    if (!res.ok) throw new Error(data.error || "API error");
 
-    return await res.json();
-
+    return data;
   } catch (err) {
-    console.error("FETCH FAIL:", url, err);
-    return { data: [] };
+    console.error("API ERROR:", url, err);
+    return {};
   }
 }
 
 /* ================= CHART ================= */
-let mainChart, mainSeries;
+let mainChart = null;
+let mainSeries = null;
 
 function createMainChart() {
-  const el = document.getElementById("mainChart");
-  el.innerHTML = "";
+  const container = el("mainChart");
+  if (!container || typeof LightweightCharts === "undefined") {
+    console.warn("Chart container or lib missing");
+    return;
+  }
 
-  mainChart = LightweightCharts.createChart(el, {
-    width: el.clientWidth || 800,
+  container.innerHTML = "";
+
+  mainChart = LightweightCharts.createChart(container, {
+    width: container.clientWidth || 800,
     height: 560,
-    layout: { background: { color: "#0f172a" }, textColor: "#cbd5e1" }
+    layout: { background: { color: "#0f172a" }, textColor: "#cbd5e1" },
+    grid: {
+      vertLines: { color: "rgba(255,255,255,0.05)" },
+      horzLines: { color: "rgba(255,255,255,0.05)" }
+    }
   });
 
   mainSeries = mainChart.addCandlestickSeries();
 
   window.addEventListener("resize", () => {
-    mainChart.applyOptions({ width: el.clientWidth });
+    if (mainChart) {
+      mainChart.applyOptions({ width: container.clientWidth });
+    }
   });
 }
 
 async function loadMainChart() {
-  const symbol = document.getElementById("chartSymbol").value;
-  const interval = document.getElementById("chartInterval").value;
+  if (!mainSeries) return;
+
+  const symbol = el("chartSymbol")?.value || "BTCUSDT";
+  const interval = el("chartInterval")?.value || "1m";
 
   const res = await fetchJSON(
     `/api/chart-candles?symbol=${symbol}&interval=${interval}&limit=150`
   );
 
-  // 🔥 CRITICAL FIX
-  const candles = (res.data || []).map(c => ({
-    time: Number(c.time),           // MUST be seconds
-    open: Number(c.open),
-    high: Number(c.high),
-    low: Number(c.low),
-    close: Number(c.close)
-  }));
+  const candles = res.data || [];
 
   if (!candles.length) {
-    console.warn("No candles received");
+    console.warn("No candles");
     return;
   }
 
@@ -81,15 +101,31 @@ async function loadMainChart() {
   mainChart.timeScale().fitContent();
 }
 
+/* SAFE wrapper (prevents crash on Render) */
+function safeLoadMainChart() {
+  try {
+    if (!mainChart) createMainChart();
+    loadMainChart();
+  } catch (e) {
+    console.error("Main chart failed:", e);
+  }
+}
+
 /* ================= BACKTEST CHART ================= */
-let btChart, btSeries;
+let btChart = null;
+let btSeries = null;
 
 function createBacktestChart() {
-  const el = document.getElementById("btChart");
-  el.innerHTML = "";
+  const container = el("btChart");
+  if (!container || typeof LightweightCharts === "undefined") {
+    console.warn("Backtest chart container missing");
+    return;
+  }
 
-  btChart = LightweightCharts.createChart(el, {
-    width: el.clientWidth || 800,
+  container.innerHTML = "";
+
+  btChart = LightweightCharts.createChart(container, {
+    width: container.clientWidth || 800,
     height: 580,
     layout: { background: { color: "#0f172a" }, textColor: "#cbd5e1" }
   });
@@ -97,25 +133,23 @@ function createBacktestChart() {
   btSeries = btChart.addCandlestickSeries();
 
   window.addEventListener("resize", () => {
-    btChart.applyOptions({ width: el.clientWidth });
+    if (btChart) {
+      btChart.applyOptions({ width: container.clientWidth });
+    }
   });
 }
 
 async function loadBacktestChartData() {
-  const symbol = document.getElementById("btSymbol").value;
-  const interval = document.getElementById("btInterval").value;
+  if (!btSeries) return;
+
+  const symbol = el("btSymbol")?.value || "BTCUSDT";
+  const interval = el("btInterval")?.value || "5m";
 
   const res = await fetchJSON(
     `/api/chart-candles?symbol=${symbol}&interval=${interval}&limit=150`
   );
 
-  const candles = (res.data || []).map(c => ({
-    time: Number(c.time),
-    open: Number(c.open),
-    high: Number(c.high),
-    low: Number(c.low),
-    close: Number(c.close)
-  }));
+  const candles = res.data || [];
 
   if (!candles.length) return;
 
@@ -123,45 +157,55 @@ async function loadBacktestChartData() {
   btChart.timeScale().fitContent();
 }
 
+function safeLoadBacktestChart() {
+  try {
+    if (!btChart) createBacktestChart();
+    loadBacktestChartData();
+  } catch (e) {
+    console.error("Backtest chart failed:", e);
+  }
+}
+
 /* ================= BACKTEST ================= */
 async function runBacktest() {
-  const btn = document.getElementById("runBacktestBtn");
-  btn.disabled = true;
+  const btn = el("runBacktestBtn");
+  if (btn) btn.disabled = true;
 
   try {
     const res = await fetchJSON("/api/backtest", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        symbol: document.getElementById("btSymbol").value,
-        interval: document.getElementById("btInterval").value,
-        limit: Number(document.getElementById("btLimit").value),
-        starting_balance: Number(document.getElementById("btStartingBalance").value)
+        symbol: el("btSymbol")?.value || "BTCUSDT",
+        interval: el("btInterval")?.value || "5m",
+        limit: Number(el("btLimit")?.value || 200),
+        strategy: el("btStrategy")?.value || "bot",
+        starting_balance: Number(el("btStartingBalance")?.value || 1000)
       })
     });
 
-    console.log("BACKTEST:", res);
+    console.log("Backtest result:", res);
 
   } catch (err) {
-    console.error(err);
+    console.error("Backtest failed:", err);
   }
 
-  btn.disabled = false;
+  if (btn) btn.disabled = false;
 }
 
 /* ================= INIT ================= */
 document.addEventListener("DOMContentLoaded", async () => {
-  setTimeout(() => {
+  try {
     createMainChart();
     createBacktestChart();
-  }, 200); // 🔥 FIX for Render
 
-  await loadMainChart();
+    await loadMainChart();
 
-  document.getElementById("chartRefreshBtn")
-    .addEventListener("click", loadMainChart);
+    el("chartRefreshBtn")?.addEventListener("click", loadMainChart);
+    el("runBacktestBtn")?.addEventListener("click", runBacktest);
 
-  document.getElementById("runBacktestBtn")
-    .addEventListener("click", runBacktest);
+  } catch (e) {
+    console.error("INIT ERROR:", e);
+  }
 });
 </script>
