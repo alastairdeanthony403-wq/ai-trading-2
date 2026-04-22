@@ -1,1057 +1,169 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AI Trading Terminal | Unified</title>
+<script>
+/* ================= NAV ================= */
+const pages = ["dashboard", "charts", "analytics", "realtime", "backtester"];
 
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+function showPage(page) {
+  pages.forEach(p => {
+    document.getElementById(`page-${p}`).classList.toggle("active", p === page);
+  });
 
-  <style>
-    :root {
-      --bg: #08111f;
-      --bg-2: #0b1220;
-      --panel: rgba(16, 24, 39, 0.88);
-      --panel-2: rgba(15, 23, 42, 0.92);
-      --border: rgba(148, 163, 184, 0.16);
-      --text: #e5edf7;
-      --muted: #94a3b8;
-      --blue: #2563eb;
-      --green: #22c55e;
-      --red: #ef4444;
-      --amber: #f59e0b;
-      --shadow: 0 16px 40px rgba(0,0,0,0.30);
+  document.querySelectorAll(".nav-link").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.page === page);
+  });
+
+  // 🔥 FIX: re-render charts when switching
+  setTimeout(() => {
+    if (page === "charts") loadMainChart();
+    if (page === "backtester") loadBacktestChartData();
+  }, 300);
+
+  history.replaceState(null, "", page === "dashboard" ? "/" : `/${page}`);
+}
+
+document.querySelectorAll(".nav-link").forEach(btn => {
+  btn.addEventListener("click", () => showPage(btn.dataset.page));
+});
+
+/* ================= HELPERS ================= */
+async function fetchJSON(url, options) {
+  try {
+    const res = await fetch(url, options);
+    const text = await res.text();
+    const data = text ? JSON.parse(text) : {};
+
+    if (!res.ok) throw new Error(data.error || "API error");
+
+    return data;
+  } catch (err) {
+    console.error("API ERROR:", url, err);
+    return {};
+  }
+}
+
+/* ================= CHARTS ================= */
+let mainChart, mainSeries;
+
+function createMainChart() {
+  const el = document.getElementById("mainChart");
+  el.innerHTML = "";
+
+  mainChart = LightweightCharts.createChart(el, {
+    width: el.clientWidth || 800,
+    height: 560,
+    layout: { background: { color: "#0f172a" }, textColor: "#cbd5e1" },
+    grid: {
+      vertLines: { color: "rgba(255,255,255,0.05)" },
+      horzLines: { color: "rgba(255,255,255,0.05)" }
+    }
+  });
+
+  mainSeries = mainChart.addCandlestickSeries();
+
+  window.addEventListener("resize", () => {
+    mainChart.applyOptions({ width: el.clientWidth });
+  });
+}
+
+async function loadMainChart() {
+  try {
+    const symbol = document.getElementById("chartSymbol").value;
+    const interval = document.getElementById("chartInterval").value;
+
+    const res = await fetchJSON(
+      `/api/chart-candles?symbol=${symbol}&interval=${interval}&limit=150`
+    );
+
+    const candles = res.data || [];
+
+    if (!candles.length) {
+      console.warn("No candle data received");
+      return;
     }
 
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: Arial, sans-serif;
-      background:
-        radial-gradient(circle at top left, rgba(37,99,235,0.10), transparent 30%),
-        radial-gradient(circle at top right, rgba(139,92,246,0.08), transparent 25%),
-        linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 100%);
-      color: var(--text);
-      min-height: 100vh;
-    }
+    mainSeries.setData(candles);
+    mainChart.timeScale().fitContent();
 
-    .page { display: none; }
-    .page.active { display: block; }
+  } catch (err) {
+    console.error("Chart load failed:", err);
+  }
+}
 
-    .glass {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      box-shadow: var(--shadow);
-      backdrop-filter: blur(10px);
-      border-radius: 20px;
-    }
+/* ================= BACKTEST CHART ================= */
+let btChart, btSeries;
 
-    .nav-link.active {
-      background: linear-gradient(135deg, #2563eb, #3b82f6);
-      color: white !important;
-      border-color: rgba(59,130,246,0.4) !important;
-    }
+function createBacktestChart() {
+  const el = document.getElementById("btChart");
+  el.innerHTML = "";
 
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      padding: 4px 10px;
-      border-radius: 999px;
-      font-size: 12px;
-      font-weight: 700;
-      border: 1px solid rgba(255,255,255,0.08);
-    }
+  btChart = LightweightCharts.createChart(el, {
+    width: el.clientWidth || 800,
+    height: 580,
+    layout: { background: { color: "#0f172a" }, textColor: "#cbd5e1" }
+  });
 
-    .badge-buy {
-      background: rgba(34,197,94,0.12);
-      color: var(--green);
-      border-color: rgba(34,197,94,0.28);
-    }
+  btSeries = btChart.addCandlestickSeries();
 
-    .badge-sell {
-      background: rgba(239,68,68,0.12);
-      color: var(--red);
-      border-color: rgba(239,68,68,0.28);
-    }
+  window.addEventListener("resize", () => {
+    btChart.applyOptions({ width: el.clientWidth });
+  });
+}
 
-    .badge-hold {
-      background: rgba(245,158,11,0.12);
-      color: var(--amber);
-      border-color: rgba(245,158,11,0.28);
-    }
+async function loadBacktestChartData() {
+  const symbol = document.getElementById("btSymbol").value;
+  const interval = document.getElementById("btInterval").value;
 
-    .positive { color: var(--green) !important; }
-    .negative { color: var(--red) !important; }
-    .neutral { color: var(--muted) !important; }
+  const res = await fetchJSON(
+    `/api/chart-candles?symbol=${symbol}&interval=${interval}&limit=150`
+  );
 
-    .loader {
-      width: 22px;
-      height: 22px;
-      border: 3px solid rgba(255,255,255,0.18);
-      border-top-color: #3b82f6;
-      border-radius: 50%;
-      animation: spin 0.7s linear infinite;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
+  const candles = res.data || [];
 
-    .error-box, .success-box {
-      display: none;
-      margin-bottom: 16px;
-      padding: 14px 16px;
-      border-radius: 16px;
-    }
-    .error-box.show { display: block; background: rgba(127,29,29,0.25); color: #fecaca; border: 1px solid rgba(239,68,68,0.35); }
-    .success-box.show { display: block; background: rgba(20,83,45,0.22); color: #bbf7d0; border: 1px solid rgba(34,197,94,0.35); }
+  if (!candles.length) return;
 
-    table { width: 100%; border-collapse: collapse; }
-    th, td {
-      padding: 10px 8px;
-      border-bottom: 1px solid rgba(255,255,255,0.08);
-      text-align: left;
-      font-size: 14px;
-    }
-    th { color: var(--muted); font-weight: 700; }
+  btSeries.setData(candles);
+  btChart.timeScale().fitContent();
+}
 
-    .feed-item {
-      background: rgba(7, 14, 28, 0.72);
-      border-left: 4px solid #3b82f6;
-      padding: 12px 14px;
-      border-radius: 12px;
-      margin-bottom: 10px;
-    }
+/* ================= BACKTEST ================= */
+async function runBacktest() {
+  const btn = document.getElementById("runBacktestBtn");
+  btn.disabled = true;
 
-    .feed-item.buy { border-left-color: var(--green); }
-    .feed-item.sell { border-left-color: var(--red); }
-    .feed-item.info { border-left-color: #3b82f6; }
-
-    .feed-time { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
-    .feed-text { font-size: 14px; color: var(--text); }
-
-    #mainChart, #btChart {
-      width: 100%;
-      height: 100%;
-    }
-
-    .chart-wrap-fixed {
-      position: relative;
-      height: 560px;
-      border-radius: 16px;
-      overflow: hidden;
-      background: #0f172a;
-    }
-
-    .chart-wrap-small {
-      position: relative;
-      height: 580px;
-      border-radius: 16px;
-      overflow: hidden;
-      background: #0f172a;
-    }
-  </style>
-</head>
-<body>
-  <div class="max-w-7xl mx-auto px-4 py-6">
-    <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
-      <div>
-        <h1 class="text-3xl font-bold text-white">AI Trading Terminal</h1>
-        <p class="text-slate-400 mt-1">Unified dashboard, charts, analytics, realtime, and true bot backtester.</p>
-      </div>
-
-      <div class="flex flex-wrap gap-2">
-        <button class="nav-link px-4 py-2 rounded-xl glass text-sm font-semibold" data-page="dashboard">Dashboard</button>
-        <button class="nav-link px-4 py-2 rounded-xl glass text-sm font-semibold" data-page="charts">Charts</button>
-        <button class="nav-link px-4 py-2 rounded-xl glass text-sm font-semibold" data-page="analytics">Analytics</button>
-        <button class="nav-link px-4 py-2 rounded-xl glass text-sm font-semibold" data-page="realtime">Realtime</button>
-        <button class="nav-link px-4 py-2 rounded-xl glass text-sm font-semibold" data-page="backtester">Backtester</button>
-      </div>
-    </div>
-
-    <!-- DASHBOARD -->
-    <section id="page-dashboard" class="page active">
-      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4 mb-6">
-        <div class="glass p-4"><div class="text-slate-400 text-sm">Balance</div><div id="dashBalance" class="text-2xl font-bold mt-2">$0.00</div></div>
-        <div class="glass p-4"><div class="text-slate-400 text-sm">Win Rate</div><div id="dashWinRate" class="text-2xl font-bold mt-2">0%</div></div>
-        <div class="glass p-4"><div class="text-slate-400 text-sm">Trades</div><div id="dashTrades" class="text-2xl font-bold mt-2">0</div></div>
-        <div class="glass p-4"><div class="text-slate-400 text-sm">Wins</div><div id="dashWins" class="text-2xl font-bold mt-2 positive">0</div></div>
-        <div class="glass p-4"><div class="text-slate-400 text-sm">Losses</div><div id="dashLosses" class="text-2xl font-bold mt-2 negative">0</div></div>
-        <div class="glass p-4"><div class="text-slate-400 text-sm">Best Signal</div><div id="dashBestSignal" class="text-2xl font-bold mt-2">0%</div></div>
-      </div>
-
-      <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        <div class="glass p-4 xl:col-span-2">
-          <div class="flex items-center justify-between mb-4">
-            <h2 class="text-xl font-bold">Live Signals</h2>
-            <div class="text-xs text-slate-400" id="dashboardLastUpdate">Waiting for engine refresh...</div>
-          </div>
-          <div id="dashboardSignals" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
-        </div>
-
-        <div class="glass p-4">
-          <h2 class="text-xl font-bold mb-4">Alert Feed</h2>
-          <div id="dashboardAlerts"></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- CHARTS -->
-    <section id="page-charts" class="page">
-      <div class="glass rounded-2xl p-4 mb-6">
-        <div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
-          <div>
-            <label class="block text-xs text-slate-400 mb-2">Symbol</label>
-            <select id="chartSymbol" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-3 text-white">
-              <option value="BTCUSDT">BTCUSDT</option>
-              <option value="ETHUSDT">ETHUSDT</option>
-              <option value="BNBUSDT">BNBUSDT</option>
-              <option value="SOLUSDT">SOLUSDT</option>
-            </select>
-          </div>
-
-          <div>
-            <label class="block text-xs text-slate-400 mb-2">Interval</label>
-            <select id="chartInterval" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-3 text-white">
-              <option value="1m">1m</option>
-              <option value="5m">5m</option>
-              <option value="15m">15m</option>
-              <option value="1h">1h</option>
-              <option value="4h">4h</option>
-            </select>
-          </div>
-
-          <div>
-            <label class="block text-xs text-slate-400 mb-2">Strategy</label>
-            <select id="chartStrategy" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-3 text-white">
-              <option value="bot" selected>Unified Live Bot</option>
-              <option value="basic">Basic</option>
-              <option value="smart_money">Smart Money</option>
-              <option value="ema_rsi">EMA + RSI</option>
-            </select>
-          </div>
-
-          <div class="flex items-end">
-            <button id="chartRefreshBtn" class="w-full bg-blue-600 hover:bg-blue-500 rounded-xl px-4 py-3 font-semibold text-white">Refresh Chart</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="grid grid-cols-1 xl:grid-cols-4 gap-6">
-        <div class="glass p-4 xl:col-span-3">
-          <div class="flex items-center justify-between mb-4">
-            <div>
-              <h2 class="text-xl font-bold">Execution Chart</h2>
-              <p class="text-sm text-slate-400">Backend candle data + rolling bot overlays</p>
-            </div>
-          </div>
-          <div class="chart-wrap-fixed">
-            <div id="mainChart"></div>
-          </div>
-        </div>
-
-        <div class="glass p-4">
-          <h2 class="text-xl font-bold mb-4">Trade Levels</h2>
-          <div id="chartLevels"></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ANALYTICS -->
-    <section id="page-analytics" class="page">
-      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-        <div class="glass p-4"><div class="text-slate-400 text-sm">Total Trades</div><div id="anTotalTrades" class="text-2xl font-bold mt-2">0</div></div>
-        <div class="glass p-4"><div class="text-slate-400 text-sm">Win Rate</div><div id="anWinRate" class="text-2xl font-bold mt-2">0%</div></div>
-        <div class="glass p-4"><div class="text-slate-400 text-sm">Wins / Losses</div><div id="anWinsLosses" class="text-2xl font-bold mt-2">0 / 0</div></div>
-        <div class="glass p-4"><div class="text-slate-400 text-sm">Net PnL</div><div id="anNetPnl" class="text-2xl font-bold mt-2">$0.00</div></div>
-      </div>
-
-      <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        <div class="glass p-4 xl:col-span-2">
-          <h2 class="text-xl font-bold mb-4">Equity Curve</h2>
-          <div style="height:360px;"><canvas id="equityChart"></canvas></div>
-        </div>
-
-        <div class="glass p-4">
-          <h2 class="text-xl font-bold mb-4">Recent Trades</h2>
-          <div class="overflow-auto">
-            <table>
-              <thead>
-                <tr><th>Time</th><th>Symbol</th><th>Side</th><th>PnL</th></tr>
-              </thead>
-              <tbody id="analyticsTable"></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- REALTIME -->
-    <section id="page-realtime" class="page">
-      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-        <div class="glass p-4"><div class="text-slate-400 text-sm">Total Live PnL</div><div id="rtTotalLivePnl" class="text-2xl font-bold mt-2">$0.00</div></div>
-        <div class="glass p-4"><div class="text-slate-400 text-sm">Open Trades</div><div id="rtOpenTradesCount" class="text-2xl font-bold mt-2">0</div></div>
-        <div class="glass p-4"><div class="text-slate-400 text-sm">Best Signal</div><div id="rtBestSignal" class="text-2xl font-bold mt-2">--</div></div>
-        <div class="glass p-4"><div class="text-slate-400 text-sm">Market Status</div><div id="rtMarketStatus" class="text-2xl font-bold mt-2 positive">LIVE</div></div>
-      </div>
-
-      <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        <div class="glass p-4 xl:col-span-2">
-          <h2 class="text-xl font-bold mb-4">Live Open Trades</h2>
-          <table>
-            <thead>
-              <tr><th>Pair</th><th>Side</th><th>Entry</th><th>Current</th><th>PnL</th></tr>
-            </thead>
-            <tbody id="realtimeTrades"></tbody>
-          </table>
-        </div>
-
-        <div class="glass p-4">
-          <h2 class="text-xl font-bold mb-4">Live Signal Feed</h2>
-          <div id="realtimeFeed"></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- BACKTESTER -->
-    <section id="page-backtester" class="page">
-      <div id="errorBox" class="error-box"></div>
-      <div id="successBox" class="success-box"></div>
-
-      <div class="glass rounded-2xl p-4 mb-6">
-        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4">
-          <div>
-            <label class="block text-sm text-slate-300 mb-2">Symbol</label>
-            <select id="btSymbol" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white">
-              <option value="BTCUSDT">BTCUSDT</option>
-              <option value="ETHUSDT">ETHUSDT</option>
-              <option value="BNBUSDT">BNBUSDT</option>
-              <option value="SOLUSDT">SOLUSDT</option>
-            </select>
-          </div>
-
-          <div>
-            <label class="block text-sm text-slate-300 mb-2">Interval</label>
-            <select id="btInterval" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white">
-              <option value="1m">1m</option>
-              <option value="5m" selected>5m</option>
-              <option value="15m">15m</option>
-              <option value="1h">1h</option>
-              <option value="4h">4h</option>
-            </select>
-          </div>
-
-          <div>
-            <label class="block text-sm text-slate-300 mb-2">Candles</label>
-            <select id="btLimit" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white">
-              <option value="100">100</option>
-              <option value="200" selected>200</option>
-              <option value="300">300</option>
-            </select>
-          </div>
-
-          <div>
-            <label class="block text-sm text-slate-300 mb-2">Strategy</label>
-            <select id="btStrategy" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white">
-              <option value="bot" selected>Unified Live Bot (True Bot Backtest)</option>
-              <option value="basic">Basic AI Strategy</option>
-              <option value="smart_money">Smart Money Strategy</option>
-              <option value="ema_rsi">EMA + RSI Strategy</option>
-            </select>
-          </div>
-
-          <div>
-            <label class="block text-sm text-slate-300 mb-2">Starting Balance</label>
-            <input id="btStartingBalance" type="number" value="1000" min="100" step="100"
-                   class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white" />
-          </div>
-
-          <div class="flex items-end gap-3">
-            <button id="runBacktestBtn"
-                    class="w-full bg-blue-600 hover:bg-blue-500 rounded-xl px-4 py-2.5 font-semibold text-white flex items-center justify-center gap-2">
-              <span id="runBtnText">Run Backtest</span>
-              <div id="runLoader" class="loader hidden"></div>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4 mb-6">
-        <div class="glass rounded-2xl p-4"><div class="text-slate-400 text-sm">Net PnL</div><div id="btNetPnl" class="text-2xl font-bold mt-2 neutral">$0.00</div></div>
-        <div class="glass rounded-2xl p-4"><div class="text-slate-400 text-sm">Final Balance</div><div id="btFinalBalance" class="text-2xl font-bold mt-2 neutral">$0.00</div></div>
-        <div class="glass rounded-2xl p-4"><div class="text-slate-400 text-sm">Total Trades</div><div id="btTotalTrades" class="text-2xl font-bold mt-2">0</div></div>
-        <div class="glass rounded-2xl p-4"><div class="text-slate-400 text-sm">Win Rate</div><div id="btWinRate" class="text-2xl font-bold mt-2">0%</div></div>
-        <div class="glass rounded-2xl p-4"><div class="text-slate-400 text-sm">Best Trade</div><div id="btBestTrade" class="text-2xl font-bold mt-2">$0.00</div></div>
-      </div>
-
-      <div class="grid grid-cols-1 xl:grid-cols-4 gap-6 mb-6">
-        <div class="xl:col-span-3 glass rounded-2xl p-4">
-          <div class="flex items-center justify-between mb-4">
-            <div>
-              <h2 class="text-xl font-bold text-white">Historical Chart View</h2>
-              <p class="text-sm text-slate-400">Backend candle data + rolling overlays</p>
-            </div>
-          </div>
-
-          <div class="chart-wrap-small">
-            <div id="btChart"></div>
-          </div>
-        </div>
-
-        <div class="glass rounded-2xl p-4">
-          <div class="flex items-center justify-between mb-4">
-            <div>
-              <h2 class="text-lg font-bold">Signal Feed</h2>
-              <p class="text-xs text-slate-400">Generated during backtest run</p>
-            </div>
-            <span id="btSignalCount" class="text-xs text-slate-400">0 signals</span>
-          </div>
-
-          <div id="btSignalsContainer" class="space-y-3 max-h-[580px] overflow-y-auto pr-1">
-            <div class="text-slate-500 text-sm">No signals yet.</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="glass rounded-2xl p-4">
-        <div class="flex items-center justify-between mb-4">
-          <div>
-            <h2 class="text-xl font-bold text-white">Backtest Trades</h2>
-            <p class="text-sm text-slate-400">Closed trade results from historical simulation.</p>
-          </div>
-        </div>
-
-        <div class="overflow-x-auto">
-          <table class="min-w-full text-sm">
-            <thead class="text-slate-400 border-b border-slate-800">
-              <tr>
-                <th class="text-left py-3 pr-4">#</th>
-                <th class="text-left py-3 pr-4">Side</th>
-                <th class="text-left py-3 pr-4">Entry</th>
-                <th class="text-left py-3 pr-4">Exit</th>
-                <th class="text-left py-3 pr-4">SL</th>
-                <th class="text-left py-3 pr-4">TP</th>
-                <th class="text-left py-3 pr-4">Entry Time</th>
-                <th class="text-left py-3 pr-4">Exit Time</th>
-                <th class="text-left py-3 pr-4">PnL</th>
-                <th class="text-left py-3 pr-4">Result</th>
-              </tr>
-            </thead>
-            <tbody id="btTradeTableBody">
-              <tr><td colspan="10" class="py-6 text-center text-slate-500">No backtest data yet.</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-  </div>
-
-  <script>
-    // ---------------- NAV ----------------
-    const pages = ["dashboard", "charts", "analytics", "realtime", "backtester"];
-
-    function showPage(page) {
-      pages.forEach(p => {
-        document.getElementById(`page-${p}`).classList.toggle("active", p === page);
-      });
-
-      document.querySelectorAll(".nav-link").forEach(btn => {
-        btn.classList.toggle("active", btn.dataset.page === page);
-      });
-
-      history.replaceState(null, "", page === "dashboard" ? "/" : `/${page}`);
-    }
-
-    document.querySelectorAll(".nav-link").forEach(btn => {
-      btn.addEventListener("click", () => showPage(btn.dataset.page));
+  try {
+    const res = await fetchJSON("/api/backtest", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        symbol: document.getElementById("btSymbol").value,
+        interval: document.getElementById("btInterval").value,
+        limit: Number(document.getElementById("btLimit").value),
+        strategy: document.getElementById("btStrategy").value,
+        starting_balance: Number(document.getElementById("btStartingBalance").value)
+      })
     });
 
-    // ---------------- HELPERS ----------------
-    function formatMoney(value) {
-      const num = Number(value || 0);
-      const sign = num >= 0 ? "" : "-";
-      return `${sign}$${Math.abs(num).toFixed(2)}`;
-    }
+    console.log("Backtest result:", res);
 
-    function signalBadge(signal) {
-      if (signal === "BUY") return "badge-buy";
-      if (signal === "SELL") return "badge-sell";
-      return "badge-hold";
-    }
+  } catch (err) {
+    console.error("Backtest failed:", err);
+  }
 
-    async function fetchJSON(url, options) {
-      const res = await fetch(url, options);
-      const text = await res.text();
-      let data = {};
-      try { data = text ? JSON.parse(text) : {}; } catch (_) {}
-      if (!res.ok) {
-        throw new Error(data.error || `Request failed (${res.status})`);
-      }
-      return data;
-    }
+  btn.disabled = false;
+}
 
-    async function refreshEngineCache() {
-      try {
-        const data = await fetchJSON("/refresh-engine");
-        document.getElementById("dashboardLastUpdate").textContent =
-          data.last_update ? `Last engine refresh: ${data.last_update}` : "Engine refreshed";
-        return data;
-      } catch (err) {
-        console.error("Engine refresh failed:", err);
-        document.getElementById("dashboardLastUpdate").textContent = "Engine refresh failed";
-        return null;
-      }
-    }
+/* ================= INIT ================= */
+document.addEventListener("DOMContentLoaded", async () => {
+  createMainChart();
+  createBacktestChart();
 
-    // ---------------- DASHBOARD ----------------
-    function renderDashboardSignals(signals) {
-      const box = document.getElementById("dashboardSignals");
-      if (!signals || !signals.length) {
-        box.innerHTML = `<div class="text-slate-500">No signals available.</div>`;
-        return;
-      }
+  await loadMainChart();
 
-      box.innerHTML = signals.map(s => `
-        <div class="glass p-4">
-          <div class="flex items-center justify-between mb-3">
-            <div class="text-lg font-bold">${s.symbol}</div>
-            <span class="badge ${signalBadge(s.signal)}">${s.signal}</span>
-          </div>
-          <div class="text-sm text-slate-300">Price: <b>${s.live_price}</b></div>
-          <div class="text-sm text-slate-300">Bias: <b>${s.bias}</b></div>
-          <div class="text-sm text-slate-300">Structure: <b>${s.structure}</b></div>
-          <div class="text-sm text-slate-300">Confidence: <b>${Number(s.confidence).toFixed(0)}%</b></div>
-        </div>
-      `).join("");
-    }
+  document.getElementById("chartRefreshBtn")
+    .addEventListener("click", loadMainChart);
 
-    function renderAlertFeed(elId, alerts) {
-      const box = document.getElementById(elId);
-      if (!alerts || !alerts.length) {
-        box.innerHTML = `<div class="text-slate-500">No alerts yet.</div>`;
-        return;
-      }
-      box.innerHTML = alerts.map(a => `
-        <div class="feed-item ${a.type || "info"}">
-          <div class="feed-time">${a.time || ""}</div>
-          <div class="feed-text">${a.message || ""}</div>
-        </div>
-      `).join("");
-    }
-
-    async function loadDashboard() {
-      const data = await fetchJSON("/signal");
-      const stats = await fetchJSON("/stats");
-      const alerts = await fetchJSON("/alerts");
-
-      document.getElementById("dashBalance").textContent = formatMoney(data.balance || 0);
-      document.getElementById("dashWinRate").textContent = `${Number(stats.win_rate || 0).toFixed(1)}%`;
-      document.getElementById("dashTrades").textContent = stats.total_trades || 0;
-      document.getElementById("dashWins").textContent = stats.wins || 0;
-      document.getElementById("dashLosses").textContent = stats.losses || 0;
-
-      const bestConfidence = data.all_signals?.length
-        ? Math.max(...data.all_signals.map(s => Number(s.confidence || 0)))
-        : 0;
-      document.getElementById("dashBestSignal").textContent = `${bestConfidence.toFixed(0)}%`;
-
-      if (data.last_update) {
-        document.getElementById("dashboardLastUpdate").textContent = `Last engine refresh: ${data.last_update}`;
-      }
-
-      renderDashboardSignals(data.all_signals || []);
-      renderAlertFeed("dashboardAlerts", alerts);
-    }
-
-    // ---------------- CHARTS PAGE ----------------
-    let mainChart, mainCandleSeries, mainLineSeries = [];
-
-    function createMainChart() {
-      const container = document.getElementById("mainChart");
-      container.innerHTML = "";
-
-      mainChart = LightweightCharts.createChart(container, {
-        width: container.clientWidth,
-        height: 560,
-        layout: {
-          background: { color: "#0f172a" },
-          textColor: "#cbd5e1"
-        },
-        grid: {
-          vertLines: { color: "rgba(255,255,255,0.05)" },
-          horzLines: { color: "rgba(255,255,255,0.05)" }
-        },
-        timeScale: {
-          borderColor: "rgba(255,255,255,0.08)",
-          timeVisible: true,
-          secondsVisible: false
-        },
-        rightPriceScale: {
-          borderColor: "rgba(255,255,255,0.08)"
-        }
-      });
-
-      mainCandleSeries = mainChart.addCandlestickSeries({
-        upColor: "#22c55e",
-        downColor: "#ef4444",
-        borderVisible: false,
-        wickUpColor: "#22c55e",
-        wickDownColor: "#ef4444"
-      });
-
-      window.addEventListener("resize", () => {
-        if (mainChart) {
-          mainChart.applyOptions({ width: container.clientWidth, height: 560 });
-        }
-      });
-    }
-
-    function clearMainLines() {
-      mainLineSeries.forEach(s => {
-        try { mainChart.removeSeries(s); } catch (_) {}
-      });
-      mainLineSeries = [];
-    }
-
-    function addMainHorizontalLine(price, color) {
-      const firstTime = window._mainCandles?.[0]?.time;
-      const lastTime = window._mainCandles?.[window._mainCandles.length - 1]?.time;
-      if (firstTime == null || lastTime == null) return;
-
-      const series = mainChart.addLineSeries({
-        color,
-        lineWidth: 2,
-        lastValueVisible: true,
-        priceLineVisible: false,
-        crosshairMarkerVisible: false
-      });
-
-      series.setData([
-        { time: firstTime, value: price },
-        { time: lastTime, value: price }
-      ]);
-
-      mainLineSeries.push(series);
-    }
-
-    async function loadMainChart() {
-      const symbol = document.getElementById("chartSymbol").value;
-      const interval = document.getElementById("chartInterval").value;
-
-      const candleRes = await fetchJSON(`/api/chart-candles?symbol=${symbol}&interval=${interval}&limit=120`);
-      const overlayRes = await fetchJSON(`/api/chart-overlays?symbol=${symbol}&interval=${interval}&limit=120`);
-
-      const candles = candleRes.data || [];
-      const overlays = overlayRes.data || {};
-      window._mainCandles = candles;
-
-      mainCandleSeries.setData(candles);
-
-      if (typeof mainCandleSeries.setMarkers === "function") {
-        mainCandleSeries.setMarkers(overlays.markers || []);
-      }
-
-      clearMainLines();
-
-      (overlays.trade_levels || []).forEach(level => {
-        addMainHorizontalLine(level.entry, level.side === "BUY" ? "#22c55e" : "#ef4444");
-        addMainHorizontalLine(level.sl, "#f59e0b");
-        addMainHorizontalLine(level.tp, "#3b82f6");
-      });
-
-      const levelsBox = document.getElementById("chartLevels");
-      if (!overlays.trade_levels || !overlays.trade_levels.length) {
-        levelsBox.innerHTML = `<div class="text-slate-500">No recent levels.</div>`;
-      } else {
-        levelsBox.innerHTML = overlays.trade_levels.slice().reverse().map(level => `
-          <div class="glass p-3 mb-3">
-            <div class="flex items-center justify-between mb-2">
-              <span class="text-sm text-slate-400">Signal</span>
-              <span class="badge ${signalBadge(level.side)}">${level.side}</span>
-            </div>
-            <div class="text-sm">Entry: <b>${level.entry}</b></div>
-            <div class="text-sm">SL: <b>${level.sl}</b></div>
-            <div class="text-sm">TP: <b>${level.tp}</b></div>
-          </div>
-        `).join("");
-      }
-
-      mainChart.timeScale().fitContent();
-    }
-
-    // ---------------- ANALYTICS ----------------
-    let equityChart;
-
-    async function loadAnalytics() {
-      const stats = await fetchJSON("/stats");
-      const history = await fetchJSON("/history");
-      const equity = await fetchJSON("/equity");
-
-      document.getElementById("anTotalTrades").textContent = stats.total_trades || 0;
-      document.getElementById("anWinRate").textContent = `${Number(stats.win_rate || 0).toFixed(1)}%`;
-      document.getElementById("anWinsLosses").textContent = `${stats.wins || 0} / ${stats.losses || 0}`;
-      document.getElementById("anNetPnl").textContent = formatMoney(stats.net_pnl || 0);
-      document.getElementById("anNetPnl").className = `text-2xl font-bold mt-2 ${(stats.net_pnl || 0) >= 0 ? "positive" : "negative"}`;
-
-      const tbody = document.getElementById("analyticsTable");
-      tbody.innerHTML = (history || []).slice(0, 20).map(t => `
-        <tr>
-          <td>${t.time || "--"}</td>
-          <td>${t.symbol || "--"}</td>
-          <td>${t.side || "--"}</td>
-          <td class="${Number(t.pnl || 0) >= 0 ? "positive" : "negative"}">${formatMoney(t.pnl || 0)}</td>
-        </tr>
-      `).join("");
-
-      const ctx = document.getElementById("equityChart").getContext("2d");
-      if (equityChart) equityChart.destroy();
-
-      equityChart = new Chart(ctx, {
-        type: "line",
-        data: {
-          labels: (equity || []).map(e => e.time),
-          datasets: [{
-            label: "Equity",
-            data: (equity || []).map(e => e.equity),
-            borderColor: "#3b82f6",
-            backgroundColor: "rgba(59,130,246,0.12)",
-            fill: true,
-            tension: 0.3,
-            pointRadius: 2
-          }]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: { legend: { labels: { color: "#e5edf7" } } },
-          scales: {
-            x: { ticks: { color: "#94a3b8" }, grid: { color: "rgba(255,255,255,0.05)" } },
-            y: { ticks: { color: "#94a3b8" }, grid: { color: "rgba(255,255,255,0.05)" } }
-          }
-        }
-      });
-    }
-
-    // ---------------- REALTIME ----------------
-    async function loadRealtime() {
-      const openTrades = await fetchJSON("/live_trades");
-      const signalMap = await fetchJSON("/signals");
-      const alerts = await fetchJSON("/alerts");
-
-      const totalPnl = (openTrades || []).reduce((sum, t) => sum + Number(t.pnl || 0), 0);
-      document.getElementById("rtTotalLivePnl").textContent = formatMoney(totalPnl);
-      document.getElementById("rtTotalLivePnl").className = `text-2xl font-bold mt-2 ${totalPnl >= 0 ? "positive" : "negative"}`;
-      document.getElementById("rtOpenTradesCount").textContent = (openTrades || []).length;
-
-      const signalEntries = Object.entries(signalMap || {}).map(([symbol, val]) => ({
-        symbol,
-        signal: val.signal,
-        confidence: Number(val.confidence || 0)
-      }));
-
-      const bestSignal = signalEntries.length
-        ? [...signalEntries].sort((a, b) => b.confidence - a.confidence)[0]
-        : null;
-
-      document.getElementById("rtBestSignal").textContent =
-        bestSignal ? `${bestSignal.symbol} ${bestSignal.signal}` : "--";
-
-      const tbody = document.getElementById("realtimeTrades");
-      if (!openTrades.length) {
-        tbody.innerHTML = `<tr><td colspan="5" class="text-slate-500 py-4">No open trades yet</td></tr>`;
-      } else {
-        tbody.innerHTML = openTrades.map(t => `
-          <tr>
-            <td>${t.symbol}</td>
-            <td class="${t.side === "BUY" ? "positive" : "negative"}">${t.side}</td>
-            <td>${Number(t.entry_price).toFixed(2)}</td>
-            <td>${Number(t.current_price).toFixed(2)}</td>
-            <td class="${Number(t.pnl) >= 0 ? "positive" : "negative"}">${formatMoney(t.pnl)}</td>
-          </tr>
-        `).join("");
-      }
-
-      renderAlertFeed("realtimeFeed", alerts);
-    }
-
-    // ---------------- BACKTESTER ----------------
-    let btChart, btCandleSeries, btLineSeries = [];
-
-    function createBacktestChart() {
-      const container = document.getElementById("btChart");
-      container.innerHTML = "";
-
-      btChart = LightweightCharts.createChart(container, {
-        width: container.clientWidth,
-        height: 580,
-        layout: {
-          background: { color: "#0f172a" },
-          textColor: "#cbd5e1"
-        },
-        grid: {
-          vertLines: { color: "rgba(255,255,255,0.05)" },
-          horzLines: { color: "rgba(255,255,255,0.05)" }
-        },
-        timeScale: {
-          borderColor: "rgba(255,255,255,0.08)",
-          timeVisible: true,
-          secondsVisible: false
-        },
-        rightPriceScale: {
-          borderColor: "rgba(255,255,255,0.08)"
-        }
-      });
-
-      btCandleSeries = btChart.addCandlestickSeries({
-        upColor: "#22c55e",
-        downColor: "#ef4444",
-        borderVisible: false,
-        wickUpColor: "#22c55e",
-        wickDownColor: "#ef4444"
-      });
-
-      window.addEventListener("resize", () => {
-        if (btChart) {
-          btChart.applyOptions({ width: container.clientWidth, height: 580 });
-        }
-      });
-    }
-
-    function clearBtLines() {
-      btLineSeries.forEach(s => {
-        try { btChart.removeSeries(s); } catch (_) {}
-      });
-      btLineSeries = [];
-    }
-
-    function addBtHorizontalLine(price, color) {
-      const firstTime = window._btCandles?.[0]?.time;
-      const lastTime = window._btCandles?.[window._btCandles.length - 1]?.time;
-      if (firstTime == null || lastTime == null) return;
-
-      const series = btChart.addLineSeries({
-        color,
-        lineWidth: 2,
-        lastValueVisible: true,
-        priceLineVisible: false,
-        crosshairMarkerVisible: false
-      });
-
-      series.setData([
-        { time: firstTime, value: price },
-        { time: lastTime, value: price }
-      ]);
-
-      btLineSeries.push(series);
-    }
-
-    function btShowError(message) {
-      const errorBox = document.getElementById("errorBox");
-      const successBox = document.getElementById("successBox");
-      successBox.classList.remove("show");
-      successBox.textContent = "";
-      errorBox.textContent = message;
-      errorBox.classList.add("show");
-    }
-
-    function btClearError() {
-      const errorBox = document.getElementById("errorBox");
-      errorBox.classList.remove("show");
-      errorBox.textContent = "";
-    }
-
-    function btShowSuccess(message) {
-      const successBox = document.getElementById("successBox");
-      successBox.textContent = message;
-      successBox.classList.add("show");
-      setTimeout(() => {
-        successBox.classList.remove("show");
-        successBox.textContent = "";
-      }, 3000);
-    }
-
-    function btUpdateSummary(summary) {
-      document.getElementById("btNetPnl").textContent = formatMoney(summary.net_pnl);
-      document.getElementById("btFinalBalance").textContent = formatMoney(summary.final_balance);
-      document.getElementById("btBestTrade").textContent = formatMoney(summary.best_trade);
-      document.getElementById("btTotalTrades").textContent = summary.total_trades || 0;
-      document.getElementById("btWinRate").textContent = `${Number(summary.win_rate || 0).toFixed(2)}%`;
-
-      document.getElementById("btNetPnl").className = `text-2xl font-bold mt-2 ${Number(summary.net_pnl || 0) >= 0 ? "positive" : "negative"}`;
-      document.getElementById("btFinalBalance").className = `text-2xl font-bold mt-2 ${(Number(summary.final_balance || 0) - Number(summary.starting_balance || 0)) >= 0 ? "positive" : "negative"}`;
-      document.getElementById("btBestTrade").className = `text-2xl font-bold mt-2 ${Number(summary.best_trade || 0) >= 0 ? "positive" : "negative"}`;
-    }
-
-    function btRenderSignals(signals) {
-      const container = document.getElementById("btSignalsContainer");
-      document.getElementById("btSignalCount").textContent = `${signals.length} signals`;
-
-      if (!signals.length) {
-        container.innerHTML = `<div class="text-slate-500 text-sm">No signals generated.</div>`;
-        return;
-      }
-
-      container.innerHTML = signals.map((signal, i) => `
-        <div class="rounded-xl border border-slate-800 bg-slate-900/70 p-3">
-          <div class="flex items-center justify-between mb-2">
-            <span class="badge ${signalBadge(signal.type)}">${signal.type}</span>
-            <span class="text-xs text-slate-400">#${i + 1}</span>
-          </div>
-          <div class="text-sm text-slate-200">Price: <span class="font-semibold">${Number(signal.price).toFixed(2)}</span></div>
-          <div class="text-xs text-slate-400 mt-1">Time: ${signal.time}</div>
-          <div class="text-xs text-slate-400 mt-1">SL: ${Number(signal.stop_loss).toFixed(2)} | TP: ${Number(signal.take_profit).toFixed(2)}</div>
-          <div class="text-xs text-slate-500 mt-1">Confidence: ${Number(signal.confidence || 0).toFixed(0)}%</div>
-        </div>
-      `).join("");
-    }
-
-    function btRenderTrades(trades) {
-      const body = document.getElementById("btTradeTableBody");
-
-      if (!trades.length) {
-        body.innerHTML = `<tr><td colspan="10" class="py-6 text-center text-slate-500">No trades found for this backtest.</td></tr>`;
-        return;
-      }
-
-      body.innerHTML = trades.map((trade, index) => {
-        const pnl = Number(trade.pnl || 0);
-        return `
-          <tr>
-            <td class="py-3 pr-4">${index + 1}</td>
-            <td class="py-3 pr-4"><span class="badge ${signalBadge(trade.side)}">${trade.side}</span></td>
-            <td class="py-3 pr-4">${Number(trade.entry_price).toFixed(2)}</td>
-            <td class="py-3 pr-4">${Number(trade.exit_price).toFixed(2)}</td>
-            <td class="py-3 pr-4">${Number(trade.stop_loss).toFixed(2)}</td>
-            <td class="py-3 pr-4">${Number(trade.take_profit).toFixed(2)}</td>
-            <td class="py-3 pr-4">${trade.entry_time}</td>
-            <td class="py-3 pr-4">${trade.exit_time}</td>
-            <td class="py-3 pr-4 font-semibold ${pnl >= 0 ? "positive" : "negative"}">${formatMoney(pnl)}</td>
-            <td class="py-3 pr-4"><span class="badge ${pnl >= 0 ? "badge-buy" : "badge-sell"}">${pnl >= 0 ? "WIN" : "LOSS"}</span></td>
-          </tr>
-        `;
-      }).join("");
-    }
-
-    function btResetOutputs() {
-      btUpdateSummary({
-        net_pnl: 0,
-        final_balance: 0,
-        best_trade: 0,
-        starting_balance: 0,
-        total_trades: 0,
-        win_rate: 0
-      });
-      btRenderSignals([]);
-      btRenderTrades([]);
-      clearBtLines();
-      if (btCandleSeries) btCandleSeries.setData([]);
-    }
-
-    async function loadBacktestChartData() {
-      const symbol = document.getElementById("btSymbol").value;
-      const interval = document.getElementById("btInterval").value;
-
-      const candleRes = await fetchJSON(`/api/chart-candles?symbol=${symbol}&interval=${interval}&limit=120`);
-      const overlayRes = await fetchJSON(`/api/chart-overlays?symbol=${symbol}&interval=${interval}&limit=120`);
-
-      const candles = candleRes.data || [];
-      const overlays = overlayRes.data || {};
-      window._btCandles = candles;
-
-      btCandleSeries.setData(candles);
-
-      if (typeof btCandleSeries.setMarkers === "function") {
-        btCandleSeries.setMarkers(overlays.markers || []);
-      }
-
-      clearBtLines();
-      (overlays.trade_levels || []).forEach(level => {
-        addBtHorizontalLine(level.entry, level.side === "BUY" ? "#22c55e" : "#ef4444");
-        addBtHorizontalLine(level.sl, "#f59e0b");
-        addBtHorizontalLine(level.tp, "#3b82f6");
-      });
-
-      btChart.timeScale().fitContent();
-    }
-
-    async function runBacktest() {
-      const symbol = document.getElementById("btSymbol").value;
-      const interval = document.getElementById("btInterval").value;
-      const limit = Number(document.getElementById("btLimit").value);
-      const strategy = document.getElementById("btStrategy").value;
-      const startingBalance = Number(document.getElementById("btStartingBalance").value);
-
-      const btn = document.getElementById("runBacktestBtn");
-      const btnText = document.getElementById("runBtnText");
-      const loader = document.getElementById("runLoader");
-
-      btClearError();
-
-      if (!startingBalance || startingBalance <= 0) {
-        btShowError("Please enter a valid starting balance.");
-        return;
-      }
-
-      btn.disabled = true;
-      btnText.textContent = "Running...";
-      loader.classList.remove("hidden");
-
-      btResetOutputs();
-
-      try {
-        await loadBacktestChartData();
-
-        const data = await fetchJSON("/api/backtest", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            symbol,
-            interval,
-            limit,
-            strategy,
-            starting_balance: startingBalance
-          })
-        });
-
-        btUpdateSummary(data.summary || {});
-        btRenderSignals(Array.isArray(data.signals) ? data.signals : []);
-        btRenderTrades(Array.isArray(data.trades) ? data.trades : []);
-        btShowSuccess(strategy === "bot" ? "True bot backtest completed." : "Backtest completed.");
-      } catch (err) {
-        btShowError(err.message || "Backtest failed.");
-      } finally {
-        btn.disabled = false;
-        btnText.textContent = "Run Backtest";
-        loader.classList.add("hidden");
-      }
-    }
-
-    // ---------------- INIT ----------------
-    document.getElementById("chartRefreshBtn").addEventListener("click", loadMainChart);
-    document.getElementById("runBacktestBtn").addEventListener("click", runBacktest);
-
-    document.addEventListener("DOMContentLoaded", async () => {
-      const path = location.pathname.replace("/", "") || "dashboard";
-      const initialPage = pages.includes(path) ? path : "dashboard";
-      showPage(initialPage);
-
-      createMainChart();
-      createBacktestChart();
-
-      await refreshEngineCache();
-
-      await Promise.all([
-        loadDashboard().catch(console.error),
-        loadMainChart().catch(console.error),
-        loadAnalytics().catch(console.error),
-        loadRealtime().catch(console.error)
-      ]);
-
-      setInterval(() => refreshEngineCache().catch(console.error), 15000);
-      setInterval(() => loadDashboard().catch(console.error), 20000);
-      setInterval(() => loadRealtime().catch(console.error), 10000);
-      setInterval(() => loadAnalytics().catch(console.error), 30000);
-    });
-  </script>
-</body>
-</html>
+  document.getElementById("runBacktestBtn")
+    .addEventListener("click", runBacktest);
+});
+</script>
