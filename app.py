@@ -1,40 +1,28 @@
 # ============================================================
-# AI Trading Engine (LEVEL 2+ UPGRADE)
-# SMC + EMA + RSI + MTF + AI CONFIDENCE + SMART SIZING
+# AI Trading Engine (UNIFIED BOT LOGIC + TRUE BACKTESTER)
 # ============================================================
 
-import os
-import time
-from datetime import datetime
-
-import pandas as pd
-import requests
 from flask import Flask, render_template, jsonify, request
 from flask_cors import CORS
-from jinja2 import TemplateNotFound
+import pandas as pd
+import requests
+import uuid
+import sqlite3
+from datetime import datetime, timedelta, timezone
 
-app = Flask(__name__, template_folder="templates")
+app = Flask(__name__)
 CORS(app)
 
-# ============================================================
-# CONFIG
-# ============================================================
+# ---------------- CONFIG ----------------
 bot_config = {
     "symbols": ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT"],
     "risk_reward": 2,
-    "base_risk": 0.01,
-    "starting_balance": 1000,
+    "risk_percent": 1,
+    "min_confidence": 60,
+    "starting_balance": 10000
 }
 
-optimizer_cache = {}
-state = {
-    "balance": bot_config["starting_balance"],
-    "open_trades": {},   # symbol -> trade
-    "trade_history": [],
-    "alerts": [],
-    "last_signals": {},
-    "last_update": 0,
-}
+DB_NAME = "trades.db"
 
 BINANCE_BASE_URLS = [
     "https://api.binance.com",
@@ -46,789 +34,1466 @@ BINANCE_BASE_URLS = [
     "https://data-api.binance.vision",
 ]
 
-REQUEST_HEADERS = {
-    "User-Agent": "Mozilla/5.0",
+COINBASE_PRODUCT_MAP = {
+    "BTCUSDT": "BTC-USD",
+    "ETHUSDT": "ETH-USD",
+    "BNBUSDT": "BNB-USD",
+    "SOLUSDT": "SOL-USD",
 }
 
-# ============================================================
-# HOME PAGE
-# ============================================================
-@app.route("/")
-def home():
-    """
-    Main page.
-    Expected file:
-      templates/preview.html
-    """
-    try:
-        return render_template("preview.html")
-    except TemplateNotFound:
-        return """
-        <h1>Template not found</h1>
-        <p>Flask is looking for <strong>templates/preview.html</strong>.</p>
-        <p>Create a folder called <strong>templates</strong> and put <strong>preview.html</strong> inside it.</p>
-        """, 500
+COINBASE_GRANULARITY_MAP = {
+    "1m": 60,
+    "5m": 300,
+    "15m": 900,
+    "1h": 3600,
+    "4h": 3600,  # fetched as 1h and aggregated to 4h
+}
+
+optimizer_cache = {}
+runtime_cache = {
+    "signals": {},
+    "last_prices": {},
+    "last_update": None,
+}
 
 
-# ============================================================
-# DATA
-# ============================================================
-def fetch_binance(symbol, interval="1m", limit=500):
-    limit = max(50, min(int(limit), 1000))
+# ---------------- DATABASE ----------------
+def get_conn():
+    return sqlite3.connect(DB_NAME)
 
-    for base in BINANCE_BASE_URLS:
+
+def init_db():
+    conn = get_conn()
+    c = conn.cursor()
+
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS trades (
+        id TEXT PRIMARY KEY,
+        symbol TEXT,
+        type TEXT,
+        entry REAL,
+        sl REAL,
+        tp REAL,
+        size REAL,
+        exit REAL,
+        pnl REAL,
+        status TEXT,
+        time TEXT
+    )
+    """)
+
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS alerts (
+        id TEXT PRIMARY KEY,
+        message TEXT,
+        type TEXT DEFAULT 'info',
+        time TEXT
+    )
+    """)
+
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS paper_open_trades (
+        id TEXT PRIMARY KEY,
+        symbol TEXT,
+        side TEXT,
+        entry_price REAL,
+        current_price REAL,
+        stop_loss REAL,
+        take_profit REAL,
+        size REAL,
+        pnl REAL,
+        confidence REAL,
+        strategy TEXT,
+        opened_at TEXT
+    )
+    """)
+
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS paper_trade_history (
+        id TEXT PRIMARY KEY,
+        symbol TEXT,
+        side TEXT,
+        entry_price REAL,
+        exit_price REAL,
+        stop_loss REAL,
+        take_profit REAL,
+        size REAL,
+        pnl REAL,
+        confidence REAL,
+        strategy TEXT,
+        opened_at TEXT,
+        closed_at TEXT
+    )
+    """)
+
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS paper_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT
+    )
+    """)
+
+    c.execute("""
+    INSERT OR IGNORE INTO paper_settings (key, value)
+    VALUES ('paper_balance', ?)
+    """, (str(bot_config["starting_balance"]),))
+
+    conn.commit()
+    conn.close()
+
+
+init_db()
+
+
+# ---------------- LOW LEVEL HELPERS ----------------
+def now_str():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _request_json(url, params=None, timeout=10):
+    return requests.get(url, params=params, timeout=timeout)
+
+
+def add_alert(message, alert_type="info"):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("""
+    INSERT INTO alerts (id, message, type, time)
+    VALUES (?, ?, ?, ?)
+    """, (str(uuid.uuid4()), message, alert_type, now_str()))
+    conn.commit()
+    conn.close()
+
+
+def get_recent_alerts(limit=20):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("""
+    SELECT message, type, time
+    FROM alerts
+    ORDER BY time DESC
+    LIMIT ?
+    """, (limit,))
+    rows = c.fetchall()
+    conn.close()
+
+    return [
+        {"message": r[0], "type": r[1], "time": r[2]}
+        for r in rows
+    ]
+
+
+def get_paper_balance():
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT value FROM paper_settings WHERE key='paper_balance'")
+    row = c.fetchone()
+    conn.close()
+    return float(row[0]) if row else float(bot_config["starting_balance"])
+
+
+def set_paper_balance(value):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("""
+    INSERT INTO paper_settings (key, value)
+    VALUES ('paper_balance', ?)
+    ON CONFLICT(key) DO UPDATE SET value=excluded.value
+    """, (str(value),))
+    conn.commit()
+    conn.close()
+
+
+# ---------------- MARKET DATA ----------------
+def _fetch_binance_klines(symbol, interval="1m", limit=100):
+    last_error = None
+
+    for base_url in BINANCE_BASE_URLS:
         try:
-            url = f"{base}/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
-            resp = requests.get(url, headers=REQUEST_HEADERS, timeout=8)
-            resp.raise_for_status()
-            data = resp.json()
+            response = _request_json(
+                f"{base_url}/api/v3/klines",
+                params={
+                    "symbol": symbol,
+                    "interval": interval,
+                    "limit": limit
+                },
+                timeout=8
+            )
 
-            if not isinstance(data, list) or not data:
+            if response.status_code == 200:
+                data = response.json()
+                if isinstance(data, list) and len(data) >= 2:
+                    return data
+                last_error = f"{base_url} returned invalid kline data"
                 continue
 
-            df = pd.DataFrame(data, columns=[
-                "time", "open", "high", "low", "close", "volume",
-                "close_time", "quote_asset_volume", "num_trades",
-                "taker_buy_base", "taker_buy_quote", "ignore"
+            body = (response.text or "").strip()
+            if len(body) > 250:
+                body = body[:250] + "..."
+            last_error = f"{base_url} returned HTTP {response.status_code}: {body}"
+
+        except requests.exceptions.RequestException as e:
+            last_error = f"{base_url} request failed: {str(e)}"
+
+    raise RuntimeError(last_error or "All Binance endpoints failed")
+
+
+def _coinbase_fetch_candles(product_id, granularity, total_needed):
+    all_rows = []
+    end_time = datetime.now(timezone.utc)
+
+    while len(all_rows) < total_needed:
+        remaining = total_needed - len(all_rows)
+        batch_size = min(300, remaining)
+
+        start_time = end_time - timedelta(seconds=granularity * batch_size)
+
+        response = _request_json(
+            f"https://api.exchange.coinbase.com/products/{product_id}/candles",
+            params={
+                "granularity": granularity,
+                "start": start_time.isoformat(),
+                "end": end_time.isoformat()
+            },
+            timeout=12
+        )
+
+        if response.status_code != 200:
+            body = (response.text or "").strip()
+            if len(body) > 250:
+                body = body[:250] + "..."
+            raise RuntimeError(f"Coinbase returned HTTP {response.status_code}: {body}")
+
+        rows = response.json()
+
+        if not isinstance(rows, list):
+            raise RuntimeError(f"Coinbase returned invalid candle data: {rows}")
+
+        if not rows:
+            break
+
+        all_rows.extend(rows)
+
+        earliest_ts = min(r[0] for r in rows)
+        end_time = datetime.fromtimestamp(earliest_ts, tz=timezone.utc) - timedelta(seconds=granularity)
+
+        if len(rows) < batch_size:
+            break
+
+    if not all_rows:
+        raise RuntimeError("Coinbase returned no candle data")
+
+    unique_rows = {}
+    for row in all_rows:
+        if isinstance(row, list) and len(row) >= 6:
+            unique_rows[int(row[0])] = row
+
+    ordered = [unique_rows[k] for k in sorted(unique_rows.keys())]
+    return ordered[-total_needed:]
+
+
+def _aggregate_coinbase_1h_to_4h(rows, limit):
+    if not rows:
+        return []
+
+    rows = sorted(rows, key=lambda x: x[0])
+    grouped = []
+    bucket = []
+
+    for row in rows:
+        bucket.append(row)
+        if len(bucket) == 4:
+            ts = int(bucket[0][0])
+            low = min(float(r[1]) for r in bucket)
+            high = max(float(r[2]) for r in bucket)
+            open_price = float(bucket[0][3])
+            close_price = float(bucket[-1][4])
+            volume = sum(float(r[5]) for r in bucket)
+
+            grouped.append([ts, low, high, open_price, close_price, volume])
+            bucket = []
+
+    return grouped[-limit:]
+
+
+def _fetch_coinbase_raw(symbol="BTCUSDT", interval="5m", limit=200):
+    product_id = COINBASE_PRODUCT_MAP.get(symbol)
+    if not product_id:
+        raise RuntimeError(f"No Coinbase fallback mapping for symbol {symbol}")
+
+    if interval not in COINBASE_GRANULARITY_MAP:
+        raise RuntimeError(f"No Coinbase fallback granularity for interval {interval}")
+
+    if interval == "4h":
+        raw_1h = _coinbase_fetch_candles(product_id, 3600, max(limit * 4, 4))
+        aggregated = _aggregate_coinbase_1h_to_4h(raw_1h, limit)
+
+        if not aggregated:
+            raise RuntimeError("Coinbase fallback could not build 4h candles")
+
+        converted = []
+        for row in aggregated:
+            converted.append([
+                int(row[0]) * 1000,
+                str(row[3]),
+                str(row[2]),
+                str(row[1]),
+                str(row[4]),
+                str(row[5]),
             ])
+        return converted
 
-            for col in ["open", "high", "low", "close", "volume"]:
-                df[col] = pd.to_numeric(df[col], errors="coerce")
+    granularity = COINBASE_GRANULARITY_MAP[interval]
+    rows = _coinbase_fetch_candles(product_id, granularity, limit)
 
-            df["time"] = pd.to_datetime(df["time"], unit="ms")
-            df = df.dropna().reset_index(drop=True)
+    converted = []
+    for row in rows:
+        converted.append([
+            int(row[0]) * 1000,
+            str(row[3]),
+            str(row[2]),
+            str(row[1]),
+            str(row[4]),
+            str(row[5]),
+        ])
 
-            if df.empty:
-                continue
-
-            return df
-
-        except Exception:
-            continue
-
-    return None
-
-
-def candle_time_to_unix(ts):
-    if isinstance(ts, pd.Timestamp):
-        return int(ts.timestamp())
-    return int(pd.Timestamp(ts).timestamp())
+    return converted
 
 
-# ============================================================
-# MARKET HELPERS
-# ============================================================
+def fetch_market_raw(symbol="BTCUSDT", interval="5m", limit=500):
+    if not symbol or not symbol.endswith("USDT"):
+        raise ValueError("Invalid symbol")
+
+    if limit < 1:
+        raise ValueError("Invalid candle limit")
+
+    primary_error = None
+
+    try:
+        return _fetch_binance_klines(symbol, interval=interval, limit=limit)
+    except Exception as e:
+        primary_error = str(e)
+
+    try:
+        return _fetch_coinbase_raw(symbol=symbol, interval=interval, limit=limit)
+    except Exception as fallback_error:
+        raise RuntimeError(
+            f"Primary source failed ({primary_error}) | Fallback source failed ({fallback_error})"
+        )
+
+
+def raw_candles_to_df(raw_candles):
+    if not raw_candles or len(raw_candles) < 2:
+        return None
+
+    first_row = raw_candles[0]
+
+    if len(first_row) >= 12:
+        df = pd.DataFrame(raw_candles, columns=[
+            "time", "open", "high", "low", "close", "volume",
+            "close_time", "quote_asset_volume", "number_of_trades",
+            "taker_buy_base", "taker_buy_quote", "ignore"
+        ])
+    elif len(first_row) >= 6:
+        df = pd.DataFrame(raw_candles, columns=[
+            "time", "open", "high", "low", "close", "volume"
+        ])
+    else:
+        return None
+
+    numeric_cols = ["open", "high", "low", "close", "volume"]
+    for col in numeric_cols:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    df["time"] = pd.to_datetime(df["time"], unit="ms", errors="coerce")
+    df.dropna(subset=["time", "open", "high", "low", "close", "volume"], inplace=True)
+
+    if len(df) < 2:
+        return None
+
+    return df.reset_index(drop=True)
+
+
+def fetch_market_df(symbol="BTCUSDT", interval="1m", limit=100):
+    try:
+        raw = fetch_market_raw(symbol=symbol, interval=interval, limit=limit)
+        return raw_candles_to_df(raw)
+    except Exception:
+        return None
+
+
+# ---------------- OPTIMIZATION ----------------
+def optimize_strategy(df, interval="1m"):
+    if df is None or len(df) < 80:
+        return {
+            "ema_fast": 9,
+            "ema_slow": 21,
+            "rsi_buy": 55,
+            "rsi_sell": 45,
+            "score": 50
+        }
+
+    cache_key = f"{interval}_{len(df)}_{round(float(df.iloc[-1]['close']), 4)}"
+    if cache_key in optimizer_cache:
+        return optimizer_cache[cache_key]
+
+    closes = pd.to_numeric(df["close"], errors="coerce")
+    if closes.isna().all():
+        result = {
+            "ema_fast": 9,
+            "ema_slow": 21,
+            "rsi_buy": 55,
+            "rsi_sell": 45,
+            "score": 50
+        }
+        optimizer_cache[cache_key] = result
+        return result
+
+    recent_vol = closes.pct_change().rolling(20).std().iloc[-1]
+    if pd.isna(recent_vol):
+        recent_vol = 0.01
+
+    if recent_vol > 0.02:
+        result = {
+            "ema_fast": 7,
+            "ema_slow": 18,
+            "rsi_buy": 58,
+            "rsi_sell": 42,
+            "score": 72
+        }
+    elif recent_vol > 0.01:
+        result = {
+            "ema_fast": 9,
+            "ema_slow": 21,
+            "rsi_buy": 55,
+            "rsi_sell": 45,
+            "score": 64
+        }
+    else:
+        result = {
+            "ema_fast": 12,
+            "ema_slow": 26,
+            "rsi_buy": 52,
+            "rsi_sell": 48,
+            "score": 57
+        }
+
+    optimizer_cache[cache_key] = result
+    return result
+
+
+def calculate_rsi(series, period=14):
+    delta = series.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+
+    avg_gain = gain.rolling(period).mean()
+    avg_loss = loss.rolling(period).mean()
+
+    rs = avg_gain / avg_loss.replace(0, pd.NA)
+    rsi = 100 - (100 / (1 + rs))
+    return rsi.fillna(50)
+
+
+# ---------------- CORE BOT LOGIC ----------------
+def generate_signal(df):
+    if df is None or len(df) < 2:
+        return "HOLD"
+
+    latest = float(df.iloc[-1]["close"])
+    previous = float(df.iloc[-2]["close"])
+
+    if latest > previous:
+        return "BUY"
+    elif latest < previous:
+        return "SELL"
+    return "HOLD"
+
+
 def get_structure(df):
     if df is None or len(df) < 20:
-        return "Range"
+        return "Range / Mixed"
 
-    sma20 = df["close"].tail(20).mean()
-    last = df["close"].iloc[-1]
+    closes = pd.to_numeric(df["close"], errors="coerce")
+    sma20 = closes.tail(20).mean()
 
-    if last > sma20:
-        return "Bullish"
-    if last < sma20:
-        return "Bearish"
-    return "Range"
+    c0 = closes.iloc[-1]
+    c1 = closes.iloc[-2]
+    c2 = closes.iloc[-3]
+
+    if c0 > sma20 and c0 > c1 > c2:
+        return "Bullish Structure"
+    elif c0 < sma20 and c0 < c1 < c2:
+        return "Bearish Structure"
+    return "Range / Mixed"
 
 
 def get_market_regime(df):
     if df is None or len(df) < 20:
         return "Unknown"
 
-    high = df["high"].tail(20).max()
-    low = df["low"].tail(20).min()
-    avg = df["close"].tail(20).mean()
+    recent_high = pd.to_numeric(df["high"], errors="coerce").tail(20).max()
+    recent_low = pd.to_numeric(df["low"], errors="coerce").tail(20).min()
+    avg_price = pd.to_numeric(df["close"], errors="coerce").tail(20).mean()
 
-    if avg == 0:
+    if avg_price == 0 or pd.isna(avg_price):
         return "Unknown"
 
-    range_pct = (high - low) / avg * 100
+    range_percent = ((recent_high - recent_low) / avg_price) * 100
 
-    if range_pct > 2.5:
+    if range_percent > 2.5:
         return "Trending"
-    if range_pct > 1:
+    elif range_percent > 1.0:
         return "Active"
-    return "Range"
+    return "Range / Quiet"
 
 
-def calc_rsi(closes, period=14):
-    delta = closes.diff()
-    gain = delta.clip(lower=0).rolling(period).mean()
-    loss = -delta.clip(upper=0).rolling(period).mean()
-    rs = gain / (loss + 1e-9)
-    return 100 - (100 / (1 + rs))
+def get_bias_from_signal(signal):
+    if signal == "BUY":
+        return "Bullish"
+    elif signal == "SELL":
+        return "Bearish"
+    return "Neutral"
 
 
-# ============================================================
-# OPTIMIZER
-# ============================================================
-def optimize_strategy(df, symbol="GLOBAL", interval="1m"):
-    cache_key = f"{symbol}:{interval}"
-    cached = optimizer_cache.get(cache_key)
-
-    if cached and (time.time() - cached["last_update"] < 300):
-        return cached["params"]
-
-    best = None
-    best_score = -999
-
-    ema_fast_opts = [7, 9, 12]
-    ema_slow_opts = [20, 21, 30]
-    rsi_buy_opts = [50, 55, 60]
-    rsi_sell_opts = [40, 45, 50]
-
-    closes = df["close"]
-
-    for f in ema_fast_opts:
-        for s in ema_slow_opts:
-            if f >= s:
-                continue
-
-            for rb in rsi_buy_opts:
-                for rs in rsi_sell_opts:
-                    ema_fast = closes.ewm(span=f, adjust=False).mean()
-                    ema_slow = closes.ewm(span=s, adjust=False).mean()
-                    rsi = calc_rsi(closes)
-
-                    wins = 0
-                    trades = 0
-
-                    for i in range(30, len(df) - 2):
-                        if ema_fast.iloc[i] > ema_slow.iloc[i] and rsi.iloc[i] > rb:
-                            if closes.iloc[i + 2] > closes.iloc[i + 1]:
-                                wins += 1
-                            trades += 1
-                        elif ema_fast.iloc[i] < ema_slow.iloc[i] and rsi.iloc[i] < rs:
-                            if closes.iloc[i + 2] < closes.iloc[i + 1]:
-                                wins += 1
-                            trades += 1
-
-                    if trades == 0:
-                        continue
-
-                    score = (wins / trades) * trades
-
-                    if score > best_score:
-                        best_score = score
-                        best = {
-                            "ema_fast": f,
-                            "ema_slow": s,
-                            "rsi_buy": rb,
-                            "rsi_sell": rs,
-                        }
-
-    if best is None:
-        best = {
-            "ema_fast": 9,
-            "ema_slow": 21,
-            "rsi_buy": 55,
-            "rsi_sell": 45,
-        }
-
-    optimizer_cache[cache_key] = {
-        "params": best,
-        "last_update": time.time(),
-    }
-
-    return best
+def get_trade_idea(signal):
+    if signal == "BUY":
+        return "Pullback long / continuation"
+    elif signal == "SELL":
+        return "Reject highs / continuation short"
+    return "Wait for clearer confirmation"
 
 
-# ============================================================
-# SIGNAL ENGINE
-# ============================================================
-def evaluate_bot_window(df, symbol="BTCUSDT", interval="1m"):
-    if df is None or len(df) < 50:
+def evaluate_bot_window(df, symbol="BTCUSDT", interval="1m", strategy="bot"):
+    if df is None or len(df) < 30:
         return {
-            "symbol": symbol,
             "signal": "HOLD",
-            "confidence": 50,
-            "structure": "Range",
+            "bias": "Neutral",
+            "structure": "Range / Mixed",
             "regime": "Unknown",
-            "optimized": None,
-            "live_price": None,
-            "change_pct": 0,
+            "confidence": 50,
+            "trade_idea": "Not enough data"
         }
 
-    closes = df["close"]
-    opt = optimize_strategy(df.tail(200), symbol=symbol, interval=interval)
+    df = df.copy().reset_index(drop=True)
+
+    opt = optimize_strategy(df.tail(200), interval=interval)
+
+    closes = pd.to_numeric(df["close"], errors="coerce")
+    opens = pd.to_numeric(df["open"], errors="coerce")
+    highs = pd.to_numeric(df["high"], errors="coerce")
+    lows = pd.to_numeric(df["low"], errors="coerce")
 
     ema_fast = closes.ewm(span=opt["ema_fast"], adjust=False).mean()
     ema_slow = closes.ewm(span=opt["ema_slow"], adjust=False).mean()
-    rsi = calc_rsi(closes)
-    rsi_val = float(rsi.iloc[-1])
+    rsi = calculate_rsi(closes, period=14)
 
-    latest = df.iloc[-1]
-    body = abs(latest["close"] - latest["open"])
-    rng = max(latest["high"] - latest["low"], 1e-9)
+    latest_close = float(closes.iloc[-1])
+    latest_open = float(opens.iloc[-1])
+    latest_high = float(highs.iloc[-1])
+    latest_low = float(lows.iloc[-1])
+    prev_close = float(closes.iloc[-2])
+    rsi_val = float(rsi.iloc[-1])
 
     structure = get_structure(df)
     regime = get_market_regime(df)
 
-    higher_interval = "5m" if interval in ["1m", "3m"] else "15m"
-    higher_df = fetch_binance(symbol, higher_interval, 200)
-    higher_structure = get_structure(higher_df) if higher_df is not None and len(higher_df) >= 20 else "Range"
+    body = abs(latest_close - latest_open)
+    rng = max(latest_high - latest_low, 1e-9)
 
-    score = 0
-
+    confidence = 50
     if ema_fast.iloc[-1] > ema_slow.iloc[-1]:
-        score += 25
+        confidence += 15
     else:
-        score -= 25
+        confidence -= 15
 
-    if rsi_val > opt["rsi_buy"]:
-        score += 20
-    elif rsi_val < opt["rsi_sell"]:
-        score -= 20
+    if latest_close > prev_close:
+        confidence += 10
+    else:
+        confidence -= 10
 
-    if body > rng * 0.6:
-        score += 20
+    if rsi_val > 55:
+        confidence += 10
+    elif rsi_val < 45:
+        confidence -= 10
 
-    if structure == higher_structure:
-        score += 15
+    if structure == "Bullish Structure":
+        confidence += 10
+    elif structure == "Bearish Structure":
+        confidence -= 10
 
-    if regime == "Trending":
-        score += 10
-
-    confidence = max(0, min(100, 50 + score))
+    confidence = max(5, min(95, confidence))
 
     signal = "HOLD"
-    if confidence > 70:
-        signal = "BUY"
-    elif confidence < 30:
-        signal = "SELL"
 
-    prev_close = float(df["close"].iloc[-2]) if len(df) > 1 else float(df["close"].iloc[-1])
-    last_close = float(df["close"].iloc[-1])
-    change_pct = ((last_close - prev_close) / prev_close * 100) if prev_close else 0
+    if strategy == "basic":
+        if ema_fast.iloc[-1] > ema_slow.iloc[-1]:
+            signal = "BUY"
+        elif ema_fast.iloc[-1] < ema_slow.iloc[-1]:
+            signal = "SELL"
+
+    elif strategy == "smart_money":
+        if body > rng * 0.6 and structure == "Bullish Structure" and confidence >= 60:
+            signal = "BUY"
+        elif body > rng * 0.6 and structure == "Bearish Structure" and confidence <= 40:
+            signal = "SELL"
+
+    elif strategy == "ema_rsi":
+        if ema_fast.iloc[-1] > ema_slow.iloc[-1] and rsi_val >= opt["rsi_buy"]:
+            signal = "BUY"
+        elif ema_fast.iloc[-1] < ema_slow.iloc[-1] and rsi_val <= opt["rsi_sell"]:
+            signal = "SELL"
+
+    else:
+        if confidence >= 70 and structure == "Bullish Structure":
+            signal = "BUY"
+        elif confidence <= 30 and structure == "Bearish Structure":
+            signal = "SELL"
+
+    return {
+        "signal": signal,
+        "bias": get_bias_from_signal(signal if signal != "HOLD" else generate_signal(df)),
+        "structure": structure,
+        "regime": regime,
+        "confidence": confidence,
+        "trade_idea": get_trade_idea(signal)
+    }
+
+
+def calculate_trade_levels(df, signal):
+    latest_close = float(df.iloc[-1]["close"])
+    latest_high = float(df.iloc[-1]["high"])
+    latest_low = float(df.iloc[-1]["low"])
+
+    if signal == "BUY":
+        sl = latest_low * 0.995
+        tp = latest_close + (latest_close - sl) * bot_config["risk_reward"]
+        return {
+            "entry": round(latest_close, 2),
+            "sl": round(sl, 2),
+            "tp": round(tp, 2)
+        }
+
+    if signal == "SELL":
+        sl = latest_high * 1.005
+        tp = latest_close - (sl - latest_close) * bot_config["risk_reward"]
+        return {
+            "entry": round(latest_close, 2),
+            "sl": round(sl, 2),
+            "tp": round(tp, 2)
+        }
+
+    return {
+        "entry": round(latest_close, 2),
+        "sl": round(latest_close, 2),
+        "tp": round(latest_close, 2)
+    }
+
+
+def get_symbol_summary(symbol, strategy="bot", interval="1m"):
+    df = fetch_market_df(symbol=symbol, interval=interval, limit=200)
+    if df is None:
+        return None
+
+    price = float(df.iloc[-1]["close"])
+    evaluation = evaluate_bot_window(df, symbol=symbol, interval=interval, strategy=strategy)
 
     return {
         "symbol": symbol,
-        "signal": signal,
-        "confidence": round(confidence, 2),
-        "structure": structure,
-        "regime": regime,
-        "optimized": opt,
-        "live_price": round(last_close, 6),
-        "change_pct": round(change_pct, 4),
+        "price": round(price, 2),
+        "signal": evaluation["signal"],
+        "bias": evaluation["bias"],
+        "structure": evaluation["structure"],
+        "regime": evaluation["regime"],
+        "confidence": evaluation["confidence"],
+        "trade_idea": evaluation["trade_idea"]
     }
 
 
-# ============================================================
-# PAPER TRADE ENGINE FOR DASHBOARD/REALTIME
-# ============================================================
-def add_alert(message, alert_type="info"):
-    state["alerts"].insert(0, {
-        "message": message,
-        "type": alert_type,
-        "time": datetime.utcnow().isoformat(),
-    })
-    state["alerts"] = state["alerts"][:20]
-
-
-def update_engine():
-    # throttle to reduce API calls
-    if time.time() - state["last_update"] < 5:
-        return
-
+def get_engine_snapshot():
     for symbol in bot_config["symbols"]:
-        df = fetch_binance(symbol, "1m", 250)
-        if df is None or len(df) < 60:
-            continue
-
-        signal_data = evaluate_bot_window(df, symbol=symbol, interval="1m")
-        last_price = float(df["close"].iloc[-1])
-
-        prev_signal = state["last_signals"].get(symbol, {}).get("signal")
-        if prev_signal and prev_signal != signal_data["signal"]:
-            add_alert(
-                f"{symbol} changed from {prev_signal} to {signal_data['signal']}",
-                "buy" if signal_data["signal"] == "BUY" else "sell" if signal_data["signal"] == "SELL" else "info"
-            )
-
-        state["last_signals"][symbol] = signal_data
-        open_trade = state["open_trades"].get(symbol)
-
-        if open_trade:
-            exit_price = None
-            candle_high = float(df["high"].iloc[-1])
-            candle_low = float(df["low"].iloc[-1])
-
-            if open_trade["side"] == "BUY":
-                if candle_low <= open_trade["stop_loss"]:
-                    exit_price = open_trade["stop_loss"]
-                elif candle_high >= open_trade["take_profit"]:
-                    exit_price = open_trade["take_profit"]
-                pnl = (last_price - open_trade["entry_price"]) * open_trade["size"]
-            else:
-                if candle_high >= open_trade["stop_loss"]:
-                    exit_price = open_trade["stop_loss"]
-                elif candle_low <= open_trade["take_profit"]:
-                    exit_price = open_trade["take_profit"]
-                pnl = (open_trade["entry_price"] - last_price) * open_trade["size"]
-
-            open_trade["current_price"] = round(last_price, 6)
-            open_trade["pnl"] = round(pnl, 2)
-
-            if exit_price is not None:
-                if open_trade["side"] == "BUY":
-                    realized = (exit_price - open_trade["entry_price"]) * open_trade["size"]
-                else:
-                    realized = (open_trade["entry_price"] - exit_price) * open_trade["size"]
-
-                state["balance"] += realized
-
-                closed = {
-                    **open_trade,
-                    "exit_price": round(exit_price, 6),
-                    "pnl": round(realized, 2),
-                    "closed_at": datetime.utcnow().isoformat(),
-                    "time": datetime.utcnow().isoformat(),
-                }
-
-                state["trade_history"].insert(0, closed)
-                state["trade_history"] = state["trade_history"][:200]
-
-                add_alert(
-                    f"Closed {symbol} {open_trade['side']} for {round(realized, 2)}",
-                    "buy" if realized >= 0 else "sell"
-                )
-
-                del state["open_trades"][symbol]
-
-        if symbol not in state["open_trades"] and signal_data["signal"] in ["BUY", "SELL"]:
-            entry = last_price
-
-            if signal_data["signal"] == "BUY":
-                sl = entry * 0.99
-                tp = entry + (entry - sl) * bot_config["risk_reward"]
-            else:
-                sl = entry * 1.01
-                tp = entry - (sl - entry) * bot_config["risk_reward"]
-
-            confidence = signal_data["confidence"] / 100.0
-            risk_amount = state["balance"] * bot_config["base_risk"] * max(confidence, 0.1)
-            stop_distance = abs(entry - sl)
-
-            if stop_distance <= 0:
-                continue
-
-            size = risk_amount / stop_distance
-
-            state["open_trades"][symbol] = {
-                "symbol": symbol,
-                "side": signal_data["signal"],
-                "entry_price": round(entry, 6),
-                "current_price": round(entry, 6),
-                "stop_loss": round(sl, 6),
-                "take_profit": round(tp, 6),
-                "size": size,
-                "pnl": 0.0,
-                "opened_at": datetime.utcnow().isoformat(),
-                "confidence": signal_data["confidence"],
-            }
-
-            add_alert(
-                f"Opened {symbol} {signal_data['signal']} at {round(entry, 2)}",
-                "buy" if signal_data["signal"] == "BUY" else "sell"
-            )
-
-    state["last_update"] = time.time()
-
-
-# ============================================================
-# BACKTEST
-# ============================================================
-def run_backtest(df, symbol="BTCUSDT", interval="5m", starting_balance=1000):
-    if df is None or len(df) < 60:
-        return {
-            "summary": {
-                "net_pnl": 0,
-                "final_balance": starting_balance,
-                "best_trade": 0,
-                "starting_balance": starting_balance,
-                "total_trades": 0,
-                "win_rate": 0,
-            },
-            "trades": [],
-            "signals": [],
-        }
-
-    balance = starting_balance
-    trades = []
-    signals = []
-    open_trade = None
-
-    for i in range(50, len(df)):
-        candle = df.iloc[i]
-
-        if open_trade:
-            high = candle["high"]
-            low = candle["low"]
-            exit_price = None
-
-            if open_trade["side"] == "BUY":
-                if low <= open_trade["stop_loss"]:
-                    exit_price = open_trade["stop_loss"]
-                elif high >= open_trade["take_profit"]:
-                    exit_price = open_trade["take_profit"]
-            else:
-                if high >= open_trade["stop_loss"]:
-                    exit_price = open_trade["stop_loss"]
-                elif low <= open_trade["take_profit"]:
-                    exit_price = open_trade["take_profit"]
-
-            if exit_price is not None:
-                if open_trade["side"] == "BUY":
-                    pnl = (exit_price - open_trade["entry_price"]) * open_trade["size"]
-                else:
-                    pnl = (open_trade["entry_price"] - exit_price) * open_trade["size"]
-
-                balance += pnl
-
-                trades.append({
-                    "side": open_trade["side"],
-                    "entry_price": round(open_trade["entry_price"], 6),
-                    "exit_price": round(exit_price, 6),
-                    "stop_loss": round(open_trade["stop_loss"], 6),
-                    "take_profit": round(open_trade["take_profit"], 6),
-                    "entry_time": open_trade["entry_time"],
-                    "exit_time": str(candle["time"]),
-                    "pnl": round(pnl, 2),
-                })
-
-                open_trade = None
-
-        if not open_trade:
-            window = df.iloc[:i].copy()
-            result = evaluate_bot_window(window, symbol=symbol, interval=interval)
-
-            if result["signal"] in ["BUY", "SELL"]:
-                entry = float(candle["close"])
-
-                if result["signal"] == "BUY":
-                    sl = entry * 0.99
-                    tp = entry + (entry - sl) * bot_config["risk_reward"]
-                else:
-                    sl = entry * 1.01
-                    tp = entry - (sl - entry) * bot_config["risk_reward"]
-
-                stop_distance = abs(entry - sl)
-                if stop_distance <= 0:
-                    continue
-
-                confidence = result["confidence"] / 100.0
-                risk_amount = balance * bot_config["base_risk"] * max(confidence, 0.1)
-                size = risk_amount / stop_distance
-
-                open_trade = {
-                    "side": result["signal"],
-                    "entry_price": entry,
-                    "stop_loss": sl,
-                    "take_profit": tp,
-                    "size": size,
-                    "entry_time": str(candle["time"]),
-                }
-
-                signals.append({
-                    "type": result["signal"],
-                    "price": entry,
-                    "time": str(candle["time"]),
-                    "stop_loss": sl,
-                    "take_profit": tp,
-                    "confidence": result["confidence"],
-                })
-
-    wins = len([t for t in trades if t["pnl"] > 0])
-    total = len(trades)
-    net_pnl = balance - starting_balance
-    best_trade = max([t["pnl"] for t in trades], default=0)
+        summary = get_symbol_summary(symbol=symbol, strategy="bot", interval="1m")
+        if summary:
+            return summary
 
     return {
-        "summary": {
-            "net_pnl": round(net_pnl, 2),
-            "final_balance": round(balance, 2),
-            "best_trade": round(best_trade, 2),
-            "starting_balance": starting_balance,
-            "total_trades": total,
-            "win_rate": round((wins / total * 100), 2) if total else 0,
-        },
-        "trades": trades,
-        "signals": signals,
+        "symbol": "BTCUSDT",
+        "price": 0,
+        "signal": "HOLD",
+        "bias": "Neutral",
+        "structure": "Range / Mixed",
+        "regime": "Unknown",
+        "confidence": 50,
+        "trade_idea": "No live data"
     }
 
 
-# ============================================================
-# CHART HELPERS
-# ============================================================
-def build_candle_payload(df):
-    out = []
+# ---------------- PAPER TRADING PERSISTENCE ----------------
+def get_paper_open_trades():
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("""
+    SELECT id, symbol, side, entry_price, current_price, stop_loss, take_profit,
+           size, pnl, confidence, strategy, opened_at
+    FROM paper_open_trades
+    ORDER BY opened_at DESC
+    """)
+    rows = c.fetchall()
+    conn.close()
+
+    return [
+        {
+            "id": r[0],
+            "symbol": r[1],
+            "side": r[2],
+            "entry_price": float(r[3]),
+            "current_price": float(r[4]),
+            "stop_loss": float(r[5]),
+            "take_profit": float(r[6]),
+            "size": float(r[7]),
+            "pnl": float(r[8]),
+            "confidence": float(r[9]),
+            "strategy": r[10],
+            "opened_at": r[11],
+        }
+        for r in rows
+    ]
+
+
+def save_paper_open_trade(trade):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("""
+    INSERT OR REPLACE INTO paper_open_trades (
+        id, symbol, side, entry_price, current_price, stop_loss, take_profit,
+        size, pnl, confidence, strategy, opened_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        trade["id"],
+        trade["symbol"],
+        trade["side"],
+        trade["entry_price"],
+        trade["current_price"],
+        trade["stop_loss"],
+        trade["take_profit"],
+        trade["size"],
+        trade["pnl"],
+        trade["confidence"],
+        trade["strategy"],
+        trade["opened_at"],
+    ))
+    conn.commit()
+    conn.close()
+
+
+def delete_paper_open_trade(trade_id):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("DELETE FROM paper_open_trades WHERE id=?", (trade_id,))
+    conn.commit()
+    conn.close()
+
+
+def save_paper_trade_history(trade):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("""
+    INSERT INTO paper_trade_history (
+        id, symbol, side, entry_price, exit_price, stop_loss, take_profit,
+        size, pnl, confidence, strategy, opened_at, closed_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        trade["id"],
+        trade["symbol"],
+        trade["side"],
+        trade["entry_price"],
+        trade["exit_price"],
+        trade["stop_loss"],
+        trade["take_profit"],
+        trade["size"],
+        trade["pnl"],
+        trade["confidence"],
+        trade["strategy"],
+        trade["opened_at"],
+        trade["closed_at"],
+    ))
+    conn.commit()
+    conn.close()
+
+
+def get_trade_history(limit=200):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("""
+    SELECT symbol, side, entry_price, exit_price, pnl, closed_at
+    FROM paper_trade_history
+    ORDER BY closed_at DESC
+    LIMIT ?
+    """, (limit,))
+    rows = c.fetchall()
+    conn.close()
+
+    return [
+        {
+            "symbol": r[0],
+            "side": r[1],
+            "entry_price": float(r[2]),
+            "exit_price": float(r[3]),
+            "pnl": float(r[4]),
+            "time": r[5]
+        }
+        for r in rows
+    ]
+
+
+# ---------------- LIVE ENGINE ----------------
+def maybe_open_trade(symbol, interval="1m", strategy="bot"):
+    open_trades = get_paper_open_trades()
+    if any(t["symbol"] == symbol for t in open_trades):
+        return
+
+    df = fetch_market_df(symbol=symbol, interval=interval, limit=200)
+    if df is None or len(df) < 30:
+        return
+
+    evaluation = evaluate_bot_window(df, symbol=symbol, interval=interval, strategy=strategy)
+    signal = evaluation["signal"]
+
+    if signal not in ["BUY", "SELL"]:
+        return
+
+    levels = calculate_trade_levels(df, signal)
+    balance = get_paper_balance()
+    risk_amount = balance * (bot_config["risk_percent"] / 100.0)
+    stop_distance = abs(levels["entry"] - levels["sl"])
+    size = risk_amount / stop_distance if stop_distance > 0 else 0
+
+    trade = {
+        "id": str(uuid.uuid4()),
+        "symbol": symbol,
+        "side": signal,
+        "entry_price": float(levels["entry"]),
+        "current_price": float(levels["entry"]),
+        "stop_loss": float(levels["sl"]),
+        "take_profit": float(levels["tp"]),
+        "size": float(size),
+        "pnl": 0.0,
+        "confidence": float(evaluation["confidence"]),
+        "strategy": strategy,
+        "opened_at": now_str(),
+    }
+
+    save_paper_open_trade(trade)
+    add_alert(f"OPEN {symbol} {signal} @ {levels['entry']}", "buy" if signal == "BUY" else "sell")
+
+
+def update_live_trades():
+    open_trades = get_paper_open_trades()
+    if not open_trades:
+        return
+
+    for trade in open_trades:
+        symbol = trade["symbol"]
+        df = fetch_market_df(symbol=symbol, interval="1m", limit=5)
+        if df is None:
+            continue
+
+        current_price = float(df.iloc[-1]["close"])
+        runtime_cache["last_prices"][symbol] = current_price
+
+        pnl = (
+            (current_price - trade["entry_price"]) * trade["size"]
+            if trade["side"] == "BUY"
+            else (trade["entry_price"] - current_price) * trade["size"]
+        )
+
+        trade["current_price"] = current_price
+        trade["pnl"] = pnl
+        save_paper_open_trade(trade)
+
+        should_close = False
+        exit_price = current_price
+
+        if trade["side"] == "BUY":
+            if current_price <= trade["stop_loss"]:
+                should_close = True
+                exit_price = trade["stop_loss"]
+            elif current_price >= trade["take_profit"]:
+                should_close = True
+                exit_price = trade["take_profit"]
+        else:
+            if current_price >= trade["stop_loss"]:
+                should_close = True
+                exit_price = trade["stop_loss"]
+            elif current_price <= trade["take_profit"]:
+                should_close = True
+                exit_price = trade["take_profit"]
+
+        if should_close:
+            closed_pnl = (
+                (exit_price - trade["entry_price"]) * trade["size"]
+                if trade["side"] == "BUY"
+                else (trade["entry_price"] - exit_price) * trade["size"]
+            )
+
+            history_trade = {
+                "id": trade["id"],
+                "symbol": trade["symbol"],
+                "side": trade["side"],
+                "entry_price": trade["entry_price"],
+                "exit_price": exit_price,
+                "stop_loss": trade["stop_loss"],
+                "take_profit": trade["take_profit"],
+                "size": trade["size"],
+                "pnl": closed_pnl,
+                "confidence": trade["confidence"],
+                "strategy": trade["strategy"],
+                "opened_at": trade["opened_at"],
+                "closed_at": now_str(),
+            }
+
+            save_paper_trade_history(history_trade)
+            delete_paper_open_trade(trade["id"])
+            set_paper_balance(get_paper_balance() + closed_pnl)
+            add_alert(
+                f"CLOSED {trade['symbol']} {trade['side']} PnL: {round(closed_pnl, 2)}",
+                "info"
+            )
+
+
+def refresh_engine():
+    all_signals = []
+    for symbol in bot_config["symbols"]:
+        summary = get_symbol_summary(symbol=symbol, strategy="bot", interval="1m")
+        if summary:
+            runtime_cache["signals"][symbol] = summary
+            runtime_cache["last_prices"][symbol] = summary["price"]
+            all_signals.append({
+                "symbol": summary["symbol"],
+                "signal": summary["signal"],
+                "live_price": summary["price"],
+                "confidence": summary["confidence"],
+                "bias": summary["bias"],
+                "structure": summary["structure"],
+                "regime": summary["regime"],
+                "trade_idea": summary["trade_idea"]
+            })
+
+    update_live_trades()
+
+    for symbol in bot_config["symbols"]:
+        maybe_open_trade(symbol, interval="1m", strategy="bot")
+
+    runtime_cache["last_update"] = now_str()
+    return all_signals
+
+
+# ---------------- CHART DATA ----------------
+def get_chart_candles(symbol="BTCUSDT", interval="1m", limit=200):
+    df = fetch_market_df(symbol=symbol, interval=interval, limit=limit)
+    if df is None:
+        return []
+
+    candles = []
     for _, row in df.iterrows():
-        out.append({
-            "time": candle_time_to_unix(row["time"]),
+        candles.append({
+            "time": int(row["time"].timestamp()),
             "open": float(row["open"]),
             "high": float(row["high"]),
             "low": float(row["low"]),
-            "close": float(row["close"]),
+            "close": float(row["close"])
         })
-    return out
+    return candles
 
 
-def build_chart_overlays(df, symbol="BTCUSDT", interval="1m"):
-    if df is None or len(df) < 50:
+def get_chart_signals(symbol="BTCUSDT", interval="1m", limit=200):
+    raw = fetch_market_raw(symbol=symbol, interval=interval, limit=limit)
+    df = raw_candles_to_df(raw)
+
+    if df is None or len(df) < 30:
         return {
             "markers": [],
             "trade_levels": [],
-            "annotations": [],
+            "annotations": []
         }
 
-    signal = evaluate_bot_window(df, symbol=symbol, interval=interval)
-    last = df.iloc[-1]
-    entry = float(last["close"])
-    side = signal["signal"]
-
-    trade_levels = []
     markers = []
+    trade_levels = []
     annotations = []
 
-    if side in ["BUY", "SELL"]:
-        if side == "BUY":
-            sl = entry * 0.99
-            tp = entry + (entry - sl) * bot_config["risk_reward"]
-            marker_position = "belowBar"
-            marker_color = "#22c55e"
-            marker_shape = "arrowUp"
-        else:
-            sl = entry * 1.01
-            tp = entry - (sl - entry) * bot_config["risk_reward"]
-            marker_position = "aboveBar"
-            marker_color = "#ef4444"
-            marker_shape = "arrowDown"
+    times = [int(t.timestamp()) for t in df["time"]]
+    highs = df["high"].tolist()
+    lows = df["low"].tolist()
 
-        last_time = candle_time_to_unix(last["time"])
-        start_time = candle_time_to_unix(df.iloc[max(0, len(df) - 20)]["time"])
+    for i in range(30, len(df)):
+        window_df = df.iloc[:i + 1].copy().reset_index(drop=True)
+        evaluation = evaluate_bot_window(window_df, symbol=symbol, interval=interval, strategy="bot")
+        signal = evaluation["signal"]
 
-        trade_levels.append({
-            "side": side,
-            "entry": round(entry, 6),
-            "sl": round(sl, 6),
-            "tp": round(tp, 6),
-        })
+        if signal in ["BUY", "SELL"]:
+            levels = calculate_trade_levels(window_df.iloc[:-1], signal)
 
-        markers.append({
-            "time": last_time,
-            "position": marker_position,
-            "color": marker_color,
-            "shape": marker_shape,
-            "text": f"{side} {signal['confidence']}%",
-        })
+            markers.append({
+                "time": times[i],
+                "position": "belowBar" if signal == "BUY" else "aboveBar",
+                "color": "#22c55e" if signal == "BUY" else "#ef4444",
+                "shape": "arrowUp" if signal == "BUY" else "arrowDown",
+                "text": f"{signal} {symbol}"
+            })
 
-        annotations.extend([
-            {
-                "type": "line",
-                "label": f"{side} Entry",
-                "price": round(entry, 6),
-                "startTime": start_time,
-                "endTime": last_time,
-                "color": marker_color,
-            },
-            {
-                "type": "line",
-                "label": "Stop Loss",
-                "price": round(sl, 6),
-                "startTime": start_time,
-                "endTime": last_time,
-                "color": "#f59e0b",
-            },
-            {
-                "type": "line",
-                "label": "Take Profit",
-                "price": round(tp, 6),
-                "startTime": start_time,
-                "endTime": last_time,
-                "color": "#3b82f6",
-            },
-        ])
+            trade_levels.append({
+                "time": times[i],
+                "side": signal,
+                "entry": levels["entry"],
+                "sl": levels["sl"],
+                "tp": levels["tp"]
+            })
+
+    recent_high = max(highs[-30:])
+    recent_low = min(lows[-30:])
+    t1 = times[-30]
+    t2 = times[-1]
+
+    annotations.append({
+        "type": "line",
+        "label": "BOS High",
+        "price": round(recent_high, 2),
+        "color": "#3b82f6",
+        "startTime": t1,
+        "endTime": t2
+    })
+
+    annotations.append({
+        "type": "line",
+        "label": "Liquidity Low",
+        "price": round(recent_low, 2),
+        "color": "#f59e0b",
+        "startTime": t1,
+        "endTime": t2
+    })
+
+    ob_top = max(highs[-12:-8])
+    ob_bottom = min(lows[-12:-8])
+
+    annotations.append({
+        "type": "rectangle",
+        "label": "Order Block",
+        "color": "rgba(34,197,94,0.18)",
+        "borderColor": "rgba(34,197,94,0.7)",
+        "startTime": times[-12],
+        "endTime": times[-4],
+        "top": round(ob_top, 2),
+        "bottom": round(ob_bottom, 2)
+    })
+
+    fvg_top = max(highs[-8:-6])
+    fvg_bottom = min(lows[-8:-6])
+
+    annotations.append({
+        "type": "rectangle",
+        "label": "FVG",
+        "color": "rgba(239,68,68,0.16)",
+        "borderColor": "rgba(239,68,68,0.7)",
+        "startTime": times[-8],
+        "endTime": times[-2],
+        "top": round(fvg_top, 2),
+        "bottom": round(fvg_bottom, 2)
+    })
 
     return {
         "markers": markers,
-        "trade_levels": trade_levels,
-        "annotations": annotations,
+        "trade_levels": trade_levels[-8:],
+        "annotations": annotations
     }
 
 
-# ============================================================
-# API FOR UNIFIED HTML
-# ============================================================
+# ---------------- BACKTESTER ----------------
+def generate_backtest_signals(candles, symbol="BTCUSDT", interval="5m", strategy="bot"):
+    df = raw_candles_to_df(candles)
+    signals = []
+
+    if df is None or len(df) < 31:
+        return signals
+
+    for i in range(30, len(df) - 1):
+        signal_window = df.iloc[:i + 1].copy().reset_index(drop=True)
+        evaluation = evaluate_bot_window(signal_window, symbol=symbol, interval=interval, strategy=strategy)
+        signal_type = evaluation["signal"]
+
+        if signal_type not in ["BUY", "SELL"]:
+            continue
+
+        planned_levels = calculate_trade_levels(signal_window, signal_type)
+        next_candle = df.iloc[i + 1]
+        entry_price = float(next_candle["open"])
+        signal_time = next_candle["time"].strftime("%Y-%m-%d %H:%M:%S")
+
+        if signal_type == "BUY":
+            stop_loss = float(planned_levels["sl"])
+            take_profit = round(entry_price + (entry_price - stop_loss) * bot_config["risk_reward"], 2)
+        else:
+            stop_loss = float(planned_levels["sl"])
+            take_profit = round(entry_price - (stop_loss - entry_price) * bot_config["risk_reward"], 2)
+
+        signals.append({
+            "index": i + 1,
+            "type": signal_type,
+            "price": round(entry_price, 2),
+            "time": signal_time,
+            "stop_loss": round(stop_loss, 2),
+            "take_profit": round(take_profit, 2),
+            "confidence": evaluation["confidence"],
+            "structure": evaluation["structure"],
+            "regime": evaluation["regime"]
+        })
+
+    return signals
+
+
+def run_backtest_engine(candles, signals, starting_balance=1000):
+    balance = float(starting_balance)
+    trades = []
+
+    if not candles or not signals:
+        summary = {
+            "starting_balance": round(starting_balance, 2),
+            "final_balance": round(balance, 2),
+            "net_pnl": 0.0,
+            "total_trades": 0,
+            "wins": 0,
+            "losses": 0,
+            "best_trade": 0.0,
+            "win_rate": 0.0
+        }
+        return summary, trades
+
+    for signal in signals:
+        entry_index = signal["index"]
+        entry_price = float(signal["price"])
+        side = signal["type"]
+        stop_loss = float(signal["stop_loss"])
+        take_profit = float(signal["take_profit"])
+        entry_time = signal["time"]
+
+        exit_price = entry_price
+        exit_time = entry_time
+        pnl = 0.0
+
+        max_forward_index = min(entry_index + 30, len(candles) - 1)
+
+        for j in range(entry_index, max_forward_index + 1):
+            candle = candles[j]
+            high = float(candle[2])
+            low = float(candle[3])
+            close = float(candle[4])
+            candle_time = datetime.utcfromtimestamp(candle[0] / 1000).strftime("%Y-%m-%d %H:%M:%S")
+
+            if side == "BUY":
+                if low <= stop_loss:
+                    exit_price = stop_loss
+                    exit_time = candle_time
+                    pnl = stop_loss - entry_price
+                    break
+                elif high >= take_profit:
+                    exit_price = take_profit
+                    exit_time = candle_time
+                    pnl = take_profit - entry_price
+                    break
+
+            elif side == "SELL":
+                if high >= stop_loss:
+                    exit_price = stop_loss
+                    exit_time = candle_time
+                    pnl = entry_price - stop_loss
+                    break
+                elif low <= take_profit:
+                    exit_price = take_profit
+                    exit_time = candle_time
+                    pnl = entry_price - take_profit
+                    break
+
+            if j == max_forward_index:
+                exit_price = close
+                exit_time = candle_time
+                pnl = (exit_price - entry_price) if side == "BUY" else (entry_price - exit_price)
+
+        balance += pnl
+
+        trades.append({
+            "side": side,
+            "entry_price": round(entry_price, 2),
+            "exit_price": round(exit_price, 2),
+            "stop_loss": round(stop_loss, 2),
+            "take_profit": round(take_profit, 2),
+            "entry_time": entry_time,
+            "exit_time": exit_time,
+            "pnl": round(pnl, 2)
+        })
+
+    total_trades = len(trades)
+    wins = len([t for t in trades if t["pnl"] > 0])
+    losses = len([t for t in trades if t["pnl"] <= 0])
+    net_pnl = round(sum(t["pnl"] for t in trades), 2)
+    best_trade = round(max([t["pnl"] for t in trades], default=0), 2)
+    win_rate = round((wins / total_trades) * 100, 2) if total_trades > 0 else 0.0
+
+    summary = {
+        "starting_balance": round(starting_balance, 2),
+        "final_balance": round(balance, 2),
+        "net_pnl": net_pnl,
+        "total_trades": total_trades,
+        "wins": wins,
+        "losses": losses,
+        "best_trade": best_trade,
+        "win_rate": win_rate
+    }
+
+    return summary, trades
+
+
+# ---------------- ANALYTICS ----------------
+def get_stats_payload():
+    history = get_trade_history(limit=1000)
+    total_trades = len(history)
+    wins = len([t for t in history if t["pnl"] > 0])
+    losses = len([t for t in history if t["pnl"] < 0])
+    net_pnl = round(sum(t["pnl"] for t in history), 2)
+    win_rate = round((wins / total_trades) * 100, 2) if total_trades > 0 else 0.0
+
+    return {
+        "total_trades": total_trades,
+        "wins": wins,
+        "losses": losses,
+        "net_pnl": net_pnl,
+        "win_rate": win_rate
+    }
+
+
+def get_equity_payload():
+    history = list(reversed(get_trade_history(limit=1000)))
+    equity = bot_config["starting_balance"]
+    points = []
+
+    for trade in history:
+        equity += trade["pnl"]
+        points.append({
+            "time": trade["time"],
+            "equity": round(equity, 2)
+        })
+
+    return points
+
+
+# ---------------- API ROUTES ----------------
 @app.route("/signal")
-def signal_dashboard():
-    update_engine()
-    all_signals = []
-
-    for symbol in bot_config["symbols"]:
-        sig = state["last_signals"].get(symbol)
-        if sig:
-            all_signals.append(sig)
-
+def signal():
+    all_signals = refresh_engine()
+    history = get_trade_history(limit=20)
     return jsonify({
-        "balance": round(state["balance"], 2),
-        "history": state["trade_history"][:50],
+        "balance": get_paper_balance(),
         "all_signals": all_signals,
+        "history": history
     })
 
 
 @app.route("/signals")
-def signals_map():
-    update_engine()
-    return jsonify(state["last_signals"])
+def signals():
+    all_signals = refresh_engine()
+    payload = {}
+    for item in all_signals:
+        payload[item["symbol"]] = {
+            "signal": item["signal"],
+            "confidence": item["confidence"],
+            "change_pct": 0.0
+        }
+    return jsonify(payload)
 
 
 @app.route("/live_trades")
 def live_trades():
-    update_engine()
-    return jsonify(list(state["open_trades"].values()))
+    refresh_engine()
+    return jsonify(get_paper_open_trades())
 
 
 @app.route("/alerts")
 def alerts():
-    update_engine()
-    return jsonify(state["alerts"][:10])
-
-
-@app.route("/stats")
-def stats():
-    update_engine()
-    history = state["trade_history"]
-    total = len(history)
-    wins = len([t for t in history if float(t.get("pnl", 0)) > 0])
-    losses = len([t for t in history if float(t.get("pnl", 0)) < 0])
-    net_pnl = sum(float(t.get("pnl", 0)) for t in history)
-    win_rate = (wins / total * 100) if total else 0
-
-    return jsonify({
-        "total_trades": total,
-        "wins": wins,
-        "losses": losses,
-        "win_rate": round(win_rate, 2),
-        "net_pnl": round(net_pnl, 2),
-    })
-
-
-@app.route("/equity")
-def equity():
-    update_engine()
-    equity_points = []
-    bal = bot_config["starting_balance"]
-
-    equity_points.append({
-        "time": "Start",
-        "equity": bal
-    })
-
-    for i, trade in enumerate(reversed(state["trade_history"])):
-        bal += float(trade.get("pnl", 0))
-        equity_points.append({
-            "time": trade.get("closed_at", f"Trade {i + 1}"),
-            "equity": round(bal, 2)
-        })
-
-    return jsonify({"equity": equity_points})
+    return jsonify(get_recent_alerts(limit=20))
 
 
 @app.route("/history")
 def history():
-    update_engine()
-    return jsonify({"history": state["trade_history"][:100]})
+    return jsonify(get_trade_history(limit=100))
+
+
+@app.route("/stats")
+def stats():
+    return jsonify(get_stats_payload())
+
+
+@app.route("/equity")
+def equity():
+    return jsonify(get_equity_payload())
+
+
+@app.route("/chart-confirmation")
+def chart_confirmation():
+    tab = request.args.get("tab", "commodities").lower()
+    engine = get_engine_snapshot()
+
+    if tab == "commodities":
+        data = {
+            "category": "Commodities",
+            "bias": engine["bias"],
+            "signal": engine["signal"],
+            "regime": engine["regime"],
+            "confidence": engine["confidence"],
+            "fx": "Neutral to weak USD" if engine["signal"] == "BUY" else "USD strength watch",
+            "commodities": engine["trade_idea"],
+            "indices": "Moderate risk-on" if engine["signal"] == "BUY" else "Mixed / cautious"
+        }
+
+    elif tab == "currencies":
+        data = {
+            "category": "Currencies",
+            "bias": "Neutral" if engine["signal"] == "HOLD" else engine["bias"],
+            "signal": engine["signal"],
+            "regime": engine["regime"],
+            "confidence": max(45, min(85, engine["confidence"] - 8)),
+            "fx": "Dollar decision zone" if engine["signal"] == "HOLD" else f"Directional bias from {engine['symbol']}",
+            "commodities": "No major commodity conflict",
+            "indices": "Waiting for broader alignment" if engine["signal"] == "HOLD" else "Macro support present"
+        }
+
+    elif tab == "indices":
+        data = {
+            "category": "Indices",
+            "bias": engine["bias"],
+            "signal": engine["signal"],
+            "regime": "Risk-on" if engine["signal"] == "BUY" else ("Risk-off" if engine["signal"] == "SELL" else "Mixed"),
+            "confidence": max(50, min(90, engine["confidence"])),
+            "fx": "USD not blocking upside" if engine["signal"] == "BUY" else "Defensive dollar watch",
+            "commodities": "Oil and metals supportive" if engine["signal"] == "BUY" else "Mixed commodity read",
+            "indices": "Broad equity strength present" if engine["signal"] == "BUY" else ("Pressure on equities" if engine["signal"] == "SELL" else "No clean trend")
+        }
+
+    else:
+        data = {
+            "category": "Commodities",
+            "bias": engine["bias"],
+            "signal": engine["signal"],
+            "regime": engine["regime"],
+            "confidence": engine["confidence"],
+            "fx": "Neutral context",
+            "commodities": engine["trade_idea"],
+            "indices": "Mixed"
+        }
+
+    return jsonify(data)
+
+
+@app.route("/chart-status")
+def chart_status():
+    symbol = request.args.get("symbol", "BTCUSDT").upper()
+    strategy = request.args.get("strategy", "bot").lower()
+    interval = request.args.get("interval", "1m")
+
+    summary = get_symbol_summary(symbol, strategy=strategy, interval=interval)
+
+    if not summary:
+        return jsonify({
+            "symbol": symbol,
+            "price": 0,
+            "signal": "HOLD",
+            "bias": "Neutral",
+            "structure": "Range / Mixed",
+            "regime": "Unknown",
+            "confidence": 50,
+            "trade_idea": "No data available"
+        })
+
+    return jsonify(summary)
 
 
 @app.route("/api/chart-candles")
 def api_chart_candles():
-    symbol = request.args.get("symbol", "BTCUSDT")
+    symbol = request.args.get("symbol", "BTCUSDT").upper()
     interval = request.args.get("interval", "1m")
+    limit = int(request.args.get("limit", 200))
 
-    try:
-        limit = int(request.args.get("limit", 200))
-    except ValueError:
-        limit = 200
-
-    df = fetch_binance(symbol, interval, limit)
-
-    if df is None or df.empty:
-        return jsonify({
-            "ok": False,
-            "error": "Failed to fetch candle data",
-            "data": []
-        }), 500
-
-    return jsonify({
-        "ok": True,
-        "data": build_candle_payload(df)
-    })
+    candles = get_chart_candles(symbol=symbol, interval=interval, limit=limit)
+    return jsonify({"ok": True, "data": candles})
 
 
 @app.route("/api/chart-overlays")
 def api_chart_overlays():
-    symbol = request.args.get("symbol", "BTCUSDT")
+    symbol = request.args.get("symbol", "BTCUSDT").upper()
     interval = request.args.get("interval", "1m")
+    limit = int(request.args.get("limit", 200))
 
-    try:
-        limit = int(request.args.get("limit", 200))
-    except ValueError:
-        limit = 200
-
-    df = fetch_binance(symbol, interval, limit)
-
-    if df is None or df.empty:
-        return jsonify({
-            "ok": False,
-            "data": {
-                "markers": [],
-                "trade_levels": [],
-                "annotations": []
-            }
-        }), 500
-
-    return jsonify({
-        "ok": True,
-        "data": build_chart_overlays(df, symbol=symbol, interval=interval)
-    })
+    data = get_chart_signals(symbol=symbol, interval=interval, limit=limit)
+    return jsonify({"ok": True, "data": data})
 
 
 @app.route("/api/backtest", methods=["POST"])
 def api_backtest():
-    data = request.get_json(silent=True) or {}
-
-    symbol = data.get("symbol", "BTCUSDT")
-    interval = data.get("interval", "5m")
-
     try:
+        data = request.get_json(force=True)
+
+        symbol = str(data.get("symbol", "BTCUSDT")).upper()
+        interval = str(data.get("interval", "5m"))
         limit = int(data.get("limit", 200))
-    except (TypeError, ValueError):
-        limit = 200
-
-    try:
+        strategy = str(data.get("strategy", "bot")).lower()
         starting_balance = float(data.get("starting_balance", 1000))
-    except (TypeError, ValueError):
-        starting_balance = 1000.0
 
-    df = fetch_binance(symbol, interval, limit)
+        if limit < 50:
+            limit = 50
+        if limit > 1000:
+            limit = 1000
 
-    if df is None or df.empty:
-        return jsonify({"error": "Could not fetch data for backtest."}), 500
-
-    return jsonify(
-        run_backtest(
-            df,
-            symbol=symbol,
-            interval=interval,
+        candles = fetch_market_raw(symbol=symbol, interval=interval, limit=limit)
+        signals = generate_backtest_signals(candles, symbol=symbol, interval=interval, strategy=strategy)
+        summary, trades = run_backtest_engine(
+            candles,
+            signals,
             starting_balance=starting_balance
         )
-    )
+
+        return jsonify({
+            "summary": summary,
+            "signals": signals,
+            "trades": trades
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
-# ============================================================
-# APP START
-# ============================================================
+# ---------------- PAGE ROUTES ----------------
+@app.route("/")
+def home():
+    return render_template("preview.html")
+
+
+@app.route("/charts")
+def charts():
+    return render_template("preview.html")
+
+
+@app.route("/analytics")
+def analytics():
+    return render_template("preview.html")
+
+
+@app.route("/realtime")
+def realtime():
+    return render_template("preview.html")
+
+
+@app.route("/backtester")
+def backtester():
+    return render_template("preview.html")
+
+
+# ---------------- RUN ----------------
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(host="0.0.0.0", port=10000, debug=True)
