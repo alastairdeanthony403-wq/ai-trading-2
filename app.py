@@ -4,18 +4,19 @@
 
 from flask import Flask, render_template, jsonify, request
 from flask_cors import CORS
+import os
 import pandas as pd
 import requests
 import uuid
 import sqlite3
 from datetime import datetime, timedelta, timezone
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder="templates")
 CORS(app)
 
 # ---------------- CONFIG ----------------
 bot_config = {
-    "symbols": ["BTCUSDT", "ETHUSDT"],
+    "symbols": ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT"],
     "risk_reward": 2,
     "risk_percent": 1,
     "min_confidence": 60,
@@ -196,17 +197,10 @@ def set_paper_balance(value):
     conn = get_conn()
     c = conn.cursor()
     c.execute("""
-    UPDATE paper_settings
-    SET value=?
-    WHERE key='paper_balance'
+    INSERT INTO paper_settings (key, value)
+    VALUES ('paper_balance', ?)
+    ON CONFLICT(key) DO UPDATE SET value=excluded.value
     """, (str(value),))
-
-    if c.rowcount == 0:
-        c.execute("""
-        INSERT INTO paper_settings (key, value)
-        VALUES ('paper_balance', ?)
-        """, (str(value),))
-
     conn.commit()
     conn.close()
 
@@ -323,7 +317,7 @@ def _aggregate_coinbase_1h_to_4h(rows, limit):
     return grouped[-limit:]
 
 
-def _fetch_coinbase_raw(symbol="BTCUSDT", interval="5m", limit=120):
+def _fetch_coinbase_raw(symbol="BTCUSDT", interval="5m", limit=200):
     product_id = COINBASE_PRODUCT_MAP.get(symbol)
     if not product_id:
         raise RuntimeError(f"No Coinbase fallback mapping for symbol {symbol}")
@@ -367,7 +361,7 @@ def _fetch_coinbase_raw(symbol="BTCUSDT", interval="5m", limit=120):
     return converted
 
 
-def fetch_market_raw(symbol="BTCUSDT", interval="5m", limit=120):
+def fetch_market_raw(symbol="BTCUSDT", interval="5m", limit=500):
     if not symbol or not symbol.endswith("USDT"):
         raise ValueError("Invalid symbol")
 
@@ -421,7 +415,7 @@ def raw_candles_to_df(raw_candles):
     return df.reset_index(drop=True)
 
 
-def fetch_market_df(symbol="BTCUSDT", interval="1m", limit=120):
+def fetch_market_df(symbol="BTCUSDT", interval="1m", limit=100):
     try:
         raw = fetch_market_raw(symbol=symbol, interval=interval, limit=limit)
         return raw_candles_to_df(raw)
@@ -431,7 +425,7 @@ def fetch_market_df(symbol="BTCUSDT", interval="1m", limit=120):
 
 # ---------------- OPTIMIZATION ----------------
 def optimize_strategy(df, interval="1m"):
-    if df is None or len(df) < 50:
+    if df is None or len(df) < 80:
         return {
             "ema_fast": 9,
             "ema_slow": 21,
@@ -582,9 +576,9 @@ def evaluate_bot_window(df, symbol="BTCUSDT", interval="1m", strategy="bot"):
             "trade_idea": "Not enough data"
         }
 
-    df = df.reset_index(drop=True)
+    df = df.copy().reset_index(drop=True)
 
-    opt = optimize_strategy(df.tail(120), interval=interval)
+    opt = optimize_strategy(df.tail(200), interval=interval)
 
     closes = pd.to_numeric(df["close"], errors="coerce")
     opens = pd.to_numeric(df["open"], errors="coerce")
@@ -698,7 +692,7 @@ def calculate_trade_levels(df, signal):
 
 
 def get_symbol_summary(symbol, strategy="bot", interval="1m"):
-    df = fetch_market_df(symbol=symbol, interval=interval, limit=120)
+    df = fetch_market_df(symbol=symbol, interval=interval, limit=200)
     if df is None:
         return None
 
@@ -859,7 +853,7 @@ def maybe_open_trade(symbol, interval="1m", strategy="bot"):
     if any(t["symbol"] == symbol for t in open_trades):
         return
 
-    df = fetch_market_df(symbol=symbol, interval=interval, limit=120)
+    df = fetch_market_df(symbol=symbol, interval=interval, limit=200)
     if df is None or len(df) < 30:
         return
 
@@ -970,43 +964,33 @@ def update_live_trades():
 
 def refresh_engine():
     all_signals = []
+    for symbol in bot_config["symbols"]:
+        summary = get_symbol_summary(symbol=symbol, strategy="bot", interval="1m")
+        if summary:
+            runtime_cache["signals"][symbol] = summary
+            runtime_cache["last_prices"][symbol] = summary["price"]
+            all_signals.append({
+                "symbol": summary["symbol"],
+                "signal": summary["signal"],
+                "live_price": summary["price"],
+                "confidence": summary["confidence"],
+                "bias": summary["bias"],
+                "structure": summary["structure"],
+                "regime": summary["regime"],
+                "trade_idea": summary["trade_idea"]
+            })
+
+    update_live_trades()
 
     for symbol in bot_config["symbols"]:
-        try:
-            summary = get_symbol_summary(symbol=symbol, strategy="bot", interval="1m")
-            if summary:
-                runtime_cache["signals"][symbol] = summary
-                runtime_cache["last_prices"][symbol] = summary["price"]
-                all_signals.append({
-                    "symbol": summary["symbol"],
-                    "signal": summary["signal"],
-                    "live_price": summary["price"],
-                    "confidence": summary["confidence"],
-                    "bias": summary["bias"],
-                    "structure": summary["structure"],
-                    "regime": summary["regime"],
-                    "trade_idea": summary["trade_idea"]
-                })
-        except Exception as e:
-            add_alert(f"Signal refresh failed for {symbol}: {str(e)}", "info")
-
-    try:
-        update_live_trades()
-    except Exception as e:
-        add_alert(f"Live trade update failed: {str(e)}", "info")
-
-    for symbol in bot_config["symbols"]:
-        try:
-            maybe_open_trade(symbol, interval="1m", strategy="bot")
-        except Exception as e:
-            add_alert(f"Open trade check failed for {symbol}: {str(e)}", "info")
+        maybe_open_trade(symbol, interval="1m", strategy="bot")
 
     runtime_cache["last_update"] = now_str()
     return all_signals
 
 
 # ---------------- CHART DATA ----------------
-def get_chart_candles(symbol="BTCUSDT", interval="1m", limit=120):
+def get_chart_candles(symbol="BTCUSDT", interval="1m", limit=200):
     df = fetch_market_df(symbol=symbol, interval=interval, limit=limit)
     if df is None:
         return []
@@ -1023,7 +1007,7 @@ def get_chart_candles(symbol="BTCUSDT", interval="1m", limit=120):
     return candles
 
 
-def get_chart_signals(symbol="BTCUSDT", interval="1m", limit=120):
+def get_chart_signals(symbol="BTCUSDT", interval="1m", limit=200):
     raw = fetch_market_raw(symbol=symbol, interval=interval, limit=limit)
     df = raw_candles_to_df(raw)
 
@@ -1043,12 +1027,12 @@ def get_chart_signals(symbol="BTCUSDT", interval="1m", limit=120):
     lows = df["low"].tolist()
 
     for i in range(30, len(df)):
-        window_df = df.iloc[:i + 1].reset_index(drop=True)
+        window_df = df.iloc[:i + 1].copy().reset_index(drop=True)
         evaluation = evaluate_bot_window(window_df, symbol=symbol, interval=interval, strategy="bot")
         signal = evaluation["signal"]
 
         if signal in ["BUY", "SELL"]:
-            levels = calculate_trade_levels(window_df.iloc[:-1], signal)
+            levels = calculate_trade_levels(window_df, signal)
 
             markers.append({
                 "time": times[i],
@@ -1133,7 +1117,7 @@ def generate_backtest_signals(candles, symbol="BTCUSDT", interval="5m", strategy
         return signals
 
     for i in range(30, len(df) - 1):
-        signal_window = df.iloc[:i + 1].reset_index(drop=True)
+        signal_window = df.iloc[:i + 1].copy().reset_index(drop=True)
         evaluation = evaluate_bot_window(signal_window, symbol=symbol, interval=interval, strategy=strategy)
         signal_type = evaluation["signal"]
 
@@ -1347,24 +1331,20 @@ def refresh_engine_route():
 
 @app.route("/signals")
 def signals():
+    all_signals = refresh_engine()
     payload = {}
-    for symbol in bot_config["symbols"]:
-        cached = runtime_cache["signals"].get(symbol)
-        if cached:
-            payload[cached["symbol"]] = {
-                "signal": cached["signal"],
-                "confidence": cached["confidence"],
-                "change_pct": 0.0
-            }
+    for item in all_signals:
+        payload[item["symbol"]] = {
+            "signal": item["signal"],
+            "confidence": item["confidence"],
+            "change_pct": 0.0
+        }
     return jsonify(payload)
 
 
 @app.route("/live_trades")
 def live_trades():
-    try:
-        update_live_trades()
-    except Exception as e:
-        add_alert(f"Live trades route update failed: {str(e)}", "info")
+    refresh_engine()
     return jsonify(get_paper_open_trades())
 
 
@@ -1471,10 +1451,7 @@ def chart_status():
 def api_chart_candles():
     symbol = request.args.get("symbol", "BTCUSDT").upper()
     interval = request.args.get("interval", "1m")
-    limit = int(request.args.get("limit", 120))
-
-    if limit > 150:
-        limit = 150
+    limit = int(request.args.get("limit", 200))
 
     candles = get_chart_candles(symbol=symbol, interval=interval, limit=limit)
     return jsonify({"ok": True, "data": candles})
@@ -1484,10 +1461,7 @@ def api_chart_candles():
 def api_chart_overlays():
     symbol = request.args.get("symbol", "BTCUSDT").upper()
     interval = request.args.get("interval", "1m")
-    limit = int(request.args.get("limit", 120))
-
-    if limit > 150:
-        limit = 150
+    limit = int(request.args.get("limit", 200))
 
     data = get_chart_signals(symbol=symbol, interval=interval, limit=limit)
     return jsonify({"ok": True, "data": data})
@@ -1506,8 +1480,8 @@ def api_backtest():
 
         if limit < 50:
             limit = 50
-        if limit > 300:
-            limit = 300
+        if limit > 1000:
+            limit = 1000
 
         candles = fetch_market_raw(symbol=symbol, interval=interval, limit=limit)
         signals = generate_backtest_signals(candles, symbol=symbol, interval=interval, strategy=strategy)
@@ -1555,4 +1529,5 @@ def backtester():
 
 # ---------------- RUN ----------------
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000, debug=True)
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port, debug=True)
