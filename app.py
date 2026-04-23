@@ -1,15 +1,17 @@
 # ============================================================
 # AI Trading Engine (UNIFIED BOT LOGIC + TRUE BACKTESTER)
+# DEPLOYMENT-SAFE VERSION
 # ============================================================
 
-from flask import Flask, render_template, jsonify, request
-from flask_cors import CORS
 import os
+import sqlite3
+import uuid
+from datetime import datetime, timedelta, timezone
+
 import pandas as pd
 import requests
-import uuid
-import sqlite3
-from datetime import datetime, timedelta, timezone
+from flask import Flask, jsonify, render_template, request
+from flask_cors import CORS
 
 app = Flask(__name__, template_folder="templates")
 CORS(app)
@@ -56,7 +58,6 @@ runtime_cache = {
     "last_prices": {},
     "last_update": None,
 }
-
 
 # ---------------- DATABASE ----------------
 def get_conn():
@@ -145,7 +146,6 @@ def init_db():
 
 init_db()
 
-
 # ---------------- LOW LEVEL HELPERS ----------------
 def now_str():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -203,7 +203,6 @@ def set_paper_balance(value):
     """, (str(value),))
     conn.commit()
     conn.close()
-
 
 # ---------------- MARKET DATA ----------------
 def _fetch_binance_klines(symbol, interval="1m", limit=100):
@@ -422,7 +421,6 @@ def fetch_market_df(symbol="BTCUSDT", interval="1m", limit=100):
     except Exception:
         return None
 
-
 # ---------------- OPTIMIZATION ----------------
 def optimize_strategy(df, interval="1m"):
     if df is None or len(df) < 80:
@@ -494,7 +492,6 @@ def calculate_rsi(series, period=14):
     rs = avg_gain / avg_loss.replace(0, pd.NA)
     rsi = 100 - (100 / (1 + rs))
     return rsi.fillna(50)
-
 
 # ---------------- CORE BOT LOGIC ----------------
 def generate_signal(df):
@@ -728,7 +725,6 @@ def get_engine_snapshot():
         "trade_idea": "No live data"
     }
 
-
 # ---------------- PAPER TRADING PERSISTENCE ----------------
 def get_paper_open_trades():
     conn = get_conn()
@@ -845,7 +841,6 @@ def get_trade_history(limit=200):
         }
         for r in rows
     ]
-
 
 # ---------------- LIVE ENGINE ----------------
 def maybe_open_trade(symbol, interval="1m", strategy="bot"):
@@ -988,7 +983,6 @@ def refresh_engine():
     runtime_cache["last_update"] = now_str()
     return all_signals
 
-
 # ---------------- CHART DATA ----------------
 def get_chart_candles(symbol="BTCUSDT", interval="1m", limit=200):
     df = fetch_market_df(symbol=symbol, interval=interval, limit=limit)
@@ -1032,7 +1026,7 @@ def get_chart_signals(symbol="BTCUSDT", interval="1m", limit=200):
         signal = evaluation["signal"]
 
         if signal in ["BUY", "SELL"]:
-            levels = calculate_trade_levels(window_df, signal)
+            levels = calculate_trade_levels(window_df.iloc[:-1], signal)
 
             markers.append({
                 "time": times[i],
@@ -1106,7 +1100,6 @@ def get_chart_signals(symbol="BTCUSDT", interval="1m", limit=200):
         "trade_levels": trade_levels[-8:],
         "annotations": annotations
     }
-
 
 # ---------------- BACKTESTER ----------------
 def generate_backtest_signals(candles, symbol="BTCUSDT", interval="5m", strategy="bot"):
@@ -1251,7 +1244,6 @@ def run_backtest_engine(candles, signals, starting_balance=1000):
 
     return summary, trades
 
-
 # ---------------- ANALYTICS ----------------
 def get_stats_payload():
     history = get_trade_history(limit=1000)
@@ -1283,7 +1275,6 @@ def get_equity_payload():
         })
 
     return points
-
 
 # ---------------- API ROUTES ----------------
 @app.route("/signal")
@@ -1500,7 +1491,6 @@ def api_backtest():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
 # ---------------- PAGE ROUTES ----------------
 @app.route("/")
 def home():
@@ -1526,8 +1516,7 @@ def realtime():
 def backtester():
     return render_template("preview.html")
 
-
 # ---------------- RUN ----------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(host="0.0.0.0", port=port, debug=False)
