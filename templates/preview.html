@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -27,6 +27,34 @@
       --purple: #8b5cf6;
       --shadow: 0 18px 44px rgba(0, 0, 0, 0.34);
       --radius: 20px;
+      --input-bg: #0c1729;
+      --chart-bg: #0c1729;
+      --table-bg: rgba(255,255,255,0.02);
+      --hero-grad-1: rgba(59,130,246,0.08);
+      --hero-grad-2: rgba(139,92,246,0.08);
+    }
+
+    html[data-theme="light"] {
+      --bg: #eef4fb;
+      --bg-2: #f8fbff;
+      --panel: rgba(255, 255, 255, 0.92);
+      --panel-2: rgba(255, 255, 255, 0.98);
+      --sidebar: rgba(243, 248, 255, 0.96);
+      --border: rgba(148, 163, 184, 0.24);
+      --text: #0f172a;
+      --muted: #475569;
+      --blue: #2563eb;
+      --blue-2: #1d4ed8;
+      --green: #16a34a;
+      --red: #dc2626;
+      --amber: #d97706;
+      --purple: #7c3aed;
+      --shadow: 0 14px 34px rgba(15, 23, 42, 0.10);
+      --input-bg: #ffffff;
+      --chart-bg: #ffffff;
+      --table-bg: rgba(255,255,255,0.70);
+      --hero-grad-1: rgba(37,99,235,0.07);
+      --hero-grad-2: rgba(124,58,237,0.06);
     }
 
     * { box-sizing: border-box; }
@@ -36,10 +64,11 @@
       min-height: 100%;
       font-family: Arial, sans-serif;
       background:
-        radial-gradient(circle at top left, rgba(59,130,246,0.08), transparent 28%),
-        radial-gradient(circle at top right, rgba(139,92,246,0.08), transparent 22%),
+        radial-gradient(circle at top left, var(--hero-grad-1), transparent 28%),
+        radial-gradient(circle at top right, var(--hero-grad-2), transparent 22%),
         linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 100%);
       color: var(--text);
+      transition: background 0.25s ease, color 0.25s ease;
     }
 
     .app-shell {
@@ -55,7 +84,19 @@
       position: sticky;
       top: 0;
       height: 100vh;
+      overflow-y: auto;
+      overflow-x: hidden;
       backdrop-filter: blur(12px);
+      transition: background 0.25s ease, border-color 0.25s ease;
+    }
+
+    .sidebar::-webkit-scrollbar {
+      width: 9px;
+    }
+
+    .sidebar::-webkit-scrollbar-thumb {
+      background: rgba(148, 163, 184, 0.35);
+      border-radius: 999px;
     }
 
     .brand {
@@ -118,6 +159,10 @@
       color: var(--text);
     }
 
+    html[data-theme="light"] .nav-btn:hover {
+      background: rgba(15,23,42,0.03);
+    }
+
     .nav-btn.active {
       background: linear-gradient(135deg, rgba(37,99,235,0.28), rgba(59,130,246,0.18));
       border-color: rgba(59,130,246,0.28);
@@ -130,6 +175,11 @@
       border: 1px solid var(--border);
       border-radius: 16px;
       background: rgba(255,255,255,0.02);
+      transition: background 0.25s ease, border-color 0.25s ease;
+    }
+
+    html[data-theme="light"] .sidebar-meta {
+      background: rgba(15,23,42,0.02);
     }
 
     .sidebar-meta-title {
@@ -147,6 +197,10 @@
       padding: 8px 0;
       border-bottom: 1px solid rgba(255,255,255,0.06);
       font-size: 13px;
+    }
+
+    html[data-theme="light"] .meta-row {
+      border-bottom: 1px solid rgba(15,23,42,0.06);
     }
 
     .meta-row:last-child {
@@ -174,6 +228,7 @@
       border-radius: var(--radius);
       box-shadow: var(--shadow);
       backdrop-filter: blur(10px);
+      transition: background 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
     }
 
     .hero-card {
@@ -216,9 +271,17 @@
       transition: 0.18s ease;
     }
 
+    html[data-theme="light"] .btn {
+      background: rgba(15,23,42,0.03);
+    }
+
     .btn:hover {
       transform: translateY(-1px);
       background: rgba(255,255,255,0.05);
+    }
+
+    html[data-theme="light"] .btn:hover {
+      background: rgba(15,23,42,0.06);
     }
 
     .btn.primary {
@@ -239,6 +302,12 @@
       background: rgba(255,255,255,0.03);
       border-radius: 16px;
       padding: 14px;
+      transition: background 0.25s ease, border-color 0.25s ease;
+    }
+
+    html[data-theme="light"] .mini-top-stat {
+      background: rgba(15,23,42,0.03);
+      border: 1px solid rgba(15,23,42,0.06);
     }
 
     .mini-top-stat .label {
@@ -307,12 +376,6 @@
       gap: 18px;
     }
 
-    .grid-3 {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 18px;
-    }
-
     .grid-4 {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
@@ -336,6 +399,12 @@
       border: 1px solid rgba(255,255,255,0.06);
       border-radius: 18px;
       padding: 16px;
+      transition: background 0.25s ease, border-color 0.25s ease;
+    }
+
+    html[data-theme="light"] .signal-card {
+      background: rgba(15,23,42,0.03);
+      border: 1px solid rgba(15,23,42,0.06);
     }
 
     .signal-top {
@@ -405,6 +474,11 @@
       border-left: 4px solid var(--blue);
       border-radius: 14px;
       padding: 12px 14px;
+      transition: background 0.25s ease;
+    }
+
+    html[data-theme="light"] .feed-item {
+      background: rgba(15,23,42,0.03);
     }
 
     .feed-item.buy { border-left-color: var(--green); }
@@ -448,25 +522,33 @@
       padding: 12px 14px;
       border-radius: 14px;
       border: 1px solid rgba(255,255,255,0.1);
-      background: #0c1729;
+      background: var(--input-bg);
       color: var(--text);
       outline: none;
+      transition: background 0.25s ease, border-color 0.25s ease, color 0.25s ease;
+    }
+
+    html[data-theme="light"] .control select,
+    html[data-theme="light"] .control input {
+      border: 1px solid rgba(15,23,42,0.10);
     }
 
     .chart-box {
       position: relative;
       height: 560px;
-      background: #0c1729;
+      background: var(--chart-bg);
       border-radius: 18px;
       overflow: hidden;
+      transition: background 0.25s ease;
     }
 
     .chart-box-sm {
       position: relative;
       height: 580px;
-      background: #0c1729;
+      background: var(--chart-bg);
       border-radius: 18px;
       overflow: hidden;
+      transition: background 0.25s ease;
     }
 
     #mainChart, #btChart {
@@ -478,13 +560,19 @@
       overflow-x: auto;
       border-radius: 14px;
       border: 1px solid rgba(255,255,255,0.06);
+      transition: border-color 0.25s ease;
+    }
+
+    html[data-theme="light"] .table-wrap {
+      border: 1px solid rgba(15,23,42,0.08);
     }
 
     table {
       width: 100%;
       border-collapse: collapse;
       min-width: 760px;
-      background: rgba(255,255,255,0.02);
+      background: var(--table-bg);
+      transition: background 0.25s ease;
     }
 
     th, td {
@@ -492,6 +580,11 @@
       border-bottom: 1px solid rgba(255,255,255,0.06);
       text-align: left;
       font-size: 14px;
+    }
+
+    html[data-theme="light"] th,
+    html[data-theme="light"] td {
+      border-bottom: 1px solid rgba(15,23,42,0.06);
     }
 
     th {
@@ -559,11 +652,11 @@
       .sidebar {
         position: relative;
         height: auto;
+        max-height: 360px;
         border-right: none;
         border-bottom: 1px solid var(--border);
       }
 
-      .grid-3,
       .grid-4,
       .grid-5,
       .stats-row {
@@ -577,7 +670,6 @@
       }
 
       .controls-grid,
-      .grid-3,
       .grid-4,
       .grid-5,
       .stats-row {
@@ -598,7 +690,7 @@
         <div class="brand-logo">AI</div>
         <div>
           <h1>Trading Terminal</h1>
-          <p>Professional dark workspace</p>
+          <p>Professional dark/light workspace</p>
         </div>
       </div>
 
@@ -620,9 +712,14 @@
 
       <div class="sidebar-meta">
         <div class="sidebar-meta-title">Workspace</div>
-        <div class="meta-row"><span>Theme</span><strong>Dark</strong></div>
+        <div class="meta-row"><span>Theme</span><strong id="themeLabel">Dark</strong></div>
         <div class="meta-row"><span>Loader</span><strong>Module Based</strong></div>
         <div class="meta-row"><span>Layout</span><strong>Sidebar + Top Stats</strong></div>
+      </div>
+
+      <div class="sidebar-meta">
+        <div class="sidebar-meta-title">Appearance</div>
+        <button class="btn" id="themeToggleBtn" style="width:100%;">☀️ Switch to Light Mode</button>
       </div>
     </aside>
 
@@ -977,23 +1074,69 @@
         return data;
       }
 
-      function setText(id, value) {
-        const el = document.getElementById(id);
-        if (el) el.textContent = value;
-      }
-
-      function setClass(id, className) {
-        const el = document.getElementById(id);
-        if (el) el.className = className;
-      }
-
       return {
         formatMoney,
         signalBadge,
-        fetchJSON,
-        setText,
-        setClass
+        fetchJSON
       };
+    });
+
+    // ---------------- THEME ----------------
+    AppModules.define("theme", () => {
+      let currentTheme = localStorage.getItem("app_theme") || "dark";
+
+      function applyTheme(theme) {
+        currentTheme = theme;
+        document.documentElement.setAttribute("data-theme", theme);
+        localStorage.setItem("app_theme", theme);
+
+        const btn = document.getElementById("themeToggleBtn");
+        const label = document.getElementById("themeLabel");
+
+        if (btn) {
+          btn.textContent = theme === "dark" ? "☀️ Switch to Light Mode" : "🌙 Switch to Dark Mode";
+        }
+        if (label) {
+          label.textContent = theme === "dark" ? "Dark" : "Light";
+        }
+
+        try {
+          AppModules.require("charts").refreshTheme();
+        } catch (_) {}
+
+        try {
+          AppModules.require("backtester").refreshTheme();
+        } catch (_) {}
+      }
+
+      function toggleTheme() {
+        applyTheme(currentTheme === "dark" ? "light" : "dark");
+      }
+
+      function getChartColors() {
+        const theme = document.documentElement.getAttribute("data-theme") || "dark";
+        if (theme === "light") {
+          return {
+            bg: "#ffffff",
+            text: "#334155",
+            grid: "rgba(15,23,42,0.08)",
+            border: "rgba(15,23,42,0.10)"
+          };
+        }
+        return {
+          bg: "#0c1729",
+          text: "#cbd5e1",
+          grid: "rgba(255,255,255,0.05)",
+          border: "rgba(255,255,255,0.08)"
+        };
+      }
+
+      function init() {
+        applyTheme(currentTheme);
+        document.getElementById("themeToggleBtn").addEventListener("click", toggleTheme);
+      }
+
+      return { init, applyTheme, toggleTheme, getChartColors };
     });
 
     // ---------------- SHARED LIVE BUS / WEBSOCKET LOADER ----------------
@@ -1002,7 +1145,6 @@
 
       const listeners = {};
       let socket = null;
-      let socketMode = "polling";
       let refreshTimer = null;
       let started = false;
 
@@ -1039,9 +1181,7 @@
 
           const signal = await fetchJSON("/signal");
           emit("dashboard:data", signal);
-          if (signal.last_update) {
-            setLastUpdate(signal.last_update);
-          }
+          if (signal.last_update) setLastUpdate(signal.last_update);
 
           const alerts = await fetchJSON("/alerts");
           emit("alerts:data", alerts);
@@ -1071,7 +1211,6 @@
 
       function startPolling() {
         if (refreshTimer) clearInterval(refreshTimer);
-        socketMode = "polling";
         setSocketStatus("Polling");
         doRefreshCycle();
         refreshTimer = setInterval(doRefreshCycle, 15000);
@@ -1086,7 +1225,6 @@
           setSocketStatus("Connecting");
 
           socket.onopen = () => {
-            socketMode = "websocket";
             setSocketStatus("Connected");
           };
 
@@ -1094,7 +1232,6 @@
             try {
               const payload = JSON.parse(event.data);
               emit("socket:message", payload);
-
               if (payload.type === "refresh_required") {
                 await doRefreshCycle();
               }
@@ -1248,6 +1385,7 @@
     // ---------------- CHARTS ----------------
     AppModules.define("charts", () => {
       const { fetchJSON, signalBadge } = AppModules.require("helpers");
+      const theme = AppModules.require("theme");
 
       let mainChart = null;
       let mainCandleSeries = null;
@@ -1257,24 +1395,26 @@
         const container = document.getElementById("mainChart");
         container.innerHTML = "";
 
+        const colors = theme.getChartColors();
+
         mainChart = LightweightCharts.createChart(container, {
           width: container.clientWidth,
           height: 560,
           layout: {
-            background: { color: "#0c1729" },
-            textColor: "#cbd5e1"
+            background: { color: colors.bg },
+            textColor: colors.text
           },
           grid: {
-            vertLines: { color: "rgba(255,255,255,0.05)" },
-            horzLines: { color: "rgba(255,255,255,0.05)" }
+            vertLines: { color: colors.grid },
+            horzLines: { color: colors.grid }
           },
           timeScale: {
-            borderColor: "rgba(255,255,255,0.08)",
+            borderColor: colors.border,
             timeVisible: true,
             secondsVisible: false
           },
           rightPriceScale: {
-            borderColor: "rgba(255,255,255,0.08)"
+            borderColor: colors.border
           }
         });
 
@@ -1288,6 +1428,23 @@
 
         window.addEventListener("resize", () => {
           if (mainChart) mainChart.applyOptions({ width: container.clientWidth, height: 560 });
+        });
+      }
+
+      function refreshTheme() {
+        if (!mainChart) return;
+        const colors = theme.getChartColors();
+        mainChart.applyOptions({
+          layout: {
+            background: { color: colors.bg },
+            textColor: colors.text
+          },
+          grid: {
+            vertLines: { color: colors.grid },
+            horzLines: { color: colors.grid }
+          },
+          timeScale: { borderColor: colors.border },
+          rightPriceScale: { borderColor: colors.border }
         });
       }
 
@@ -1366,14 +1523,13 @@
         mainChart.timeScale().fitContent();
       }
 
-      return { create, load };
+      return { create, load, refreshTheme };
     });
 
     // ---------------- ANALYTICS ----------------
     AppModules.define("analytics", () => {
       const { formatMoney } = AppModules.require("helpers");
       let equityChart = null;
-      let lastHistory = [];
 
       function renderStats(stats) {
         document.getElementById("anTotalTrades").textContent = stats.total_trades || 0;
@@ -1384,9 +1540,8 @@
       }
 
       function renderHistory(history) {
-        lastHistory = history || [];
         const tbody = document.getElementById("analyticsTable");
-        tbody.innerHTML = lastHistory.slice(0, 20).map(t => `
+        tbody.innerHTML = (history || []).slice(0, 20).map(t => `
           <tr>
             <td>${t.time || "--"}</td>
             <td>${t.symbol || "--"}</td>
@@ -1399,6 +1554,11 @@
       function renderEquity(equity) {
         const ctx = document.getElementById("equityChart").getContext("2d");
         if (equityChart) equityChart.destroy();
+
+        const isLight = document.documentElement.getAttribute("data-theme") === "light";
+        const gridColor = isLight ? "rgba(15,23,42,0.08)" : "rgba(255,255,255,0.05)";
+        const labelColor = isLight ? "#475569" : "#94a3b8";
+        const legendColor = isLight ? "#334155" : "#e5edf7";
 
         equityChart = new Chart(ctx, {
           type: "line",
@@ -1418,11 +1578,11 @@
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
-              legend: { labels: { color: "#e5edf7" } }
+              legend: { labels: { color: legendColor } }
             },
             scales: {
-              x: { ticks: { color: "#94a3b8" }, grid: { color: "rgba(255,255,255,0.05)" } },
-              y: { ticks: { color: "#94a3b8" }, grid: { color: "rgba(255,255,255,0.05)" } }
+              x: { ticks: { color: labelColor }, grid: { color: gridColor } },
+              y: { ticks: { color: labelColor }, grid: { color: gridColor } }
             }
           }
         });
@@ -1496,6 +1656,7 @@
     // ---------------- BACKTESTER ----------------
     AppModules.define("backtester", () => {
       const { fetchJSON, formatMoney, signalBadge } = AppModules.require("helpers");
+      const theme = AppModules.require("theme");
 
       let btChart = null;
       let btCandleSeries = null;
@@ -1505,24 +1666,26 @@
         const container = document.getElementById("btChart");
         container.innerHTML = "";
 
+        const colors = theme.getChartColors();
+
         btChart = LightweightCharts.createChart(container, {
           width: container.clientWidth,
           height: 580,
           layout: {
-            background: { color: "#0c1729" },
-            textColor: "#cbd5e1"
+            background: { color: colors.bg },
+            textColor: colors.text
           },
           grid: {
-            vertLines: { color: "rgba(255,255,255,0.05)" },
-            horzLines: { color: "rgba(255,255,255,0.05)" }
+            vertLines: { color: colors.grid },
+            horzLines: { color: colors.grid }
           },
           timeScale: {
-            borderColor: "rgba(255,255,255,0.08)",
+            borderColor: colors.border,
             timeVisible: true,
             secondsVisible: false
           },
           rightPriceScale: {
-            borderColor: "rgba(255,255,255,0.08)"
+            borderColor: colors.border
           }
         });
 
@@ -1536,6 +1699,23 @@
 
         window.addEventListener("resize", () => {
           if (btChart) btChart.applyOptions({ width: container.clientWidth, height: 580 });
+        });
+      }
+
+      function refreshTheme() {
+        if (!btChart) return;
+        const colors = theme.getChartColors();
+        btChart.applyOptions({
+          layout: {
+            background: { color: colors.bg },
+            textColor: colors.text
+          },
+          grid: {
+            vertLines: { color: colors.grid },
+            horzLines: { color: colors.grid }
+          },
+          timeScale: { borderColor: colors.border },
+          rightPriceScale: { borderColor: colors.border }
         });
       }
 
@@ -1749,13 +1929,13 @@
         }
       }
 
-      return { create, run };
+      return { create, run, refreshTheme };
     });
 
     // ---------------- APP INIT ----------------
     (function () {
-      const helpers = AppModules.require("helpers");
       const nav = AppModules.require("nav");
+      const theme = AppModules.require("theme");
       const livebus = AppModules.require("livebus");
       const dashboard = AppModules.require("dashboard");
       const charts = AppModules.require("charts");
@@ -1763,9 +1943,8 @@
       const realtime = AppModules.require("realtime");
       const backtester = AppModules.require("backtester");
 
-      let latestAlerts = [];
-
       document.addEventListener("DOMContentLoaded", async () => {
+        theme.init();
         nav.init();
         charts.create();
         backtester.create();
@@ -1785,9 +1964,8 @@
         });
 
         livebus.on("alerts:data", (alerts) => {
-          latestAlerts = alerts || [];
-          dashboard.renderAlerts(latestAlerts);
-          realtime.renderFeed(latestAlerts);
+          dashboard.renderAlerts(alerts || []);
+          realtime.renderFeed(alerts || []);
         });
 
         livebus.on("stats:data", (stats) => {
