@@ -1950,6 +1950,10 @@
         backtester.create();
 
         document.getElementById("chartRefreshBtn").addEventListener("click", () => charts.load().catch(console.error));
+        document.getElementById("chartSymbol").addEventListener("change", () => charts.load().catch(console.error));
+        document.getElementById("chartInterval").addEventListener("change", () => charts.load().catch(console.error));
+        document.getElementById("chartStrategy").addEventListener("change", () => charts.load().catch(console.error));
+
         document.getElementById("runBacktestBtn").addEventListener("click", () => backtester.run());
         document.getElementById("globalRefreshBtn").addEventListener("click", async () => {
           try {
@@ -1993,7 +1997,15 @@
           document.getElementById("sbEngineStatus").textContent = "Error";
         });
 
-        await charts.load().catch(console.error);
+        try {
+          await charts.load();
+        } catch (err) {
+          console.error(err);
+          const levelsBox = document.getElementById("chartLevels");
+          if (levelsBox) {
+            levelsBox.innerHTML = `<div class="feed-item sell"><div class="feed-time">Chart Error</div><div class="feed-text">${err.message || "Failed to load chart data."}</div></div>`;
+          }
+        }
         livebus.start();
       });
     })();
