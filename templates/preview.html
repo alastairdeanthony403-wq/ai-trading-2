@@ -798,63 +798,117 @@
         </div>
       </section>
 
-      <!-- CHARTS -->
-      <section id="page-charts" class="page">
-        <div class="panel" style="margin-bottom:18px;">
-          <div class="controls-grid">
-            <div class="control">
-              <label>Symbol</label>
-              <select id="chartSymbol">
-                <option value="BTCUSDT">BTCUSDT</option>
-                <option value="ETHUSDT">ETHUSDT</option>
-                <option value="BNBUSDT">BNBUSDT</option>
-                <option value="SOLUSDT">SOLUSDT</option>
-              </select>
-            </div>
 
-            <div class="control">
-              <label>Interval</label>
-              <select id="chartInterval">
-                <option value="1m">1m</option>
-                <option value="5m">5m</option>
-                <option value="15m">15m</option>
-                <option value="1h">1h</option>
-                <option value="4h">4h</option>
-              </select>
-            </div>
+< THE CSS (important) -->
+<style>
+#mainChart {
+  width: 100%;
+  height: 500px;
+}
 
-            <div class="control">
-              <label>Strategy View</label>
-              <select id="chartStrategy">
-                <option value="bot" selected>Unified Live Bot</option>
-                <option value="basic">Basic</option>
-                <option value="smart_money">Smart Money</option>
-                <option value="ema_rsi">EMA + RSI</option>
-              </select>
-            </div>
+#btChart {
+  width: 100%;
+  height: 500px;
+}
+</style>
 
-            <div class="control" style="display:flex;align-items:flex-end;">
-              <button id="chartRefreshBtn" class="btn primary" style="width:100%;" type="button">Refresh Chart</button>
-            </div>
-          </div>
-        </div>
+<script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
 
-        <div class="grid-2">
-          <div class="panel">
-            <h3 class="panel-title">Execution Chart</h3>
-            <div class="panel-subtitle">Candles, markers, and recent trade levels</div>
-            <div class="chart-box">
-              <div id="mainChart"></div>
-            </div>
-          </div>
+<script>
 
-          <div class="panel">
-            <h3 class="panel-title">Trade Levels</h3>
-            <div class="panel-subtitle">Recent backend trade levels</div>
-            <div id="chartLevels"></div>
-          </div>
-        </div>
-      </section>
+const pages = ["dashboard", "charts", "analytics", "realtime", "backtester"];
+
+function showPage(page) {
+  pages.forEach(p => {
+    document.getElementById(`page-${p}`).classList.toggle("active", p === page);
+  });
+
+  document.querySelectorAll(".nav-link").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.page === page);
+  });
+
+  // 🔥 FIX: recreate charts ONLY when visible
+  setTimeout(() => {
+    if (page === "charts") {
+      createMainChart();
+      loadMainChart();
+    }
+
+    if (page === "backtester") {
+      createBacktestChart();
+      loadBacktestChartData();
+    }
+  }, 300);
+
+  history.replaceState(null, "", page === "dashboard" ? "/" : `/${page}`);
+}
+
+// NAV CLICK FIX (ensure it exists AFTER DOM loads)
+document.addEventListener("DOMContentLoaded", () => {
+  document.querySelectorAll(".nav-link").forEach(btn => {
+    btn.addEventListener("click", () => showPage(btn.dataset.page));
+  });
+});
+
+
+// ================= CHARTS =================
+let mainChart, mainSeries;
+
+function createMainChart() {
+  const el = document.getElementById("mainChart");
+  if (!el) return;
+
+  el.innerHTML = "";
+
+  mainChart = LightweightCharts.createChart(el, {
+    width: el.clientWidth || 800,
+    height: el.clientHeight || 500,
+    layout: { background: { color: "#0f172a" }, textColor: "#cbd5e1" },
+    grid: {
+      vertLines: { color: "rgba(255,255,255,0.05)" },
+      horzLines: { color: "rgba(255,255,255,0.05)" }
+    }
+  });
+
+  mainSeries = mainChart.addCandlestickSeries();
+
+  window.addEventListener("resize", () => {
+    if (mainChart) {
+      mainChart.applyOptions({
+        width: el.clientWidth,
+        height: el.clientHeight
+      });
+    }
+  });
+}
+
+async function loadMainChart() {
+  if (!mainSeries) return;
+
+  try {
+    const symbol = document.getElementById("chartSymbol").value;
+    const interval = document.getElementById("chartInterval").value;
+
+    const res = await fetch(`/api/chart-candles?symbol=${symbol}&interval=${interval}&limit=150`);
+    const data = await res.json();
+
+    const candles = data.data || [];
+
+    if (!candles.length) {
+      console.warn("No candle data received");
+      return;
+    }
+
+    mainSeries.setData(candles);
+    mainChart.timeScale().fitContent();
+
+  } catch (err) {
+    console.error("Chart load failed:", err);
+  }
+}
+
+</script>
+
 
       <!-- ANALYTICS -->
       <section id="page-analytics" class="page">
