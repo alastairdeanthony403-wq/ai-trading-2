@@ -1841,7 +1841,7 @@ def api_backtest():
             fee_percent=fee_percent,
             slippage_percent=slippage_percent
         )
-         save_backtest_run(
+        save_backtest_run(
             symbol=symbol,
             interval=interval,
             strategy=strategy,
