@@ -1131,6 +1131,8 @@ def generate_backtest_signals(candles, symbol="BTCUSDT", interval="5m", strategy
 
         signals.append({
             "index": i + 1,
+            "symbol": symbol,
+            "interval": interval,
             "type": signal_type,
             "price": round(entry_price, 2),
             "time": signal_time,
@@ -1647,10 +1649,15 @@ def api_backtest():
             strategy=strategy
         )
 
+        fee_percent = float(data.get("fee_percent", 0.04))
+slippage_percent = float(data.get("slippage_percent", 0.02))
+
         summary, trades = run_backtest_engine(
             candles,
             signals,
-            starting_balance=starting_balance
+            starting_balance=starting_balance,
+            fee_percent=fee_percent,
+            slippage_percent=slippage_percent
         )
 
         return jsonify({
