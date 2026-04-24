@@ -1144,8 +1144,20 @@ def generate_backtest_signals(candles, symbol="BTCUSDT", interval="5m", strategy
     return signals
 
 
-def run_backtest_engine(candles, signals, starting_balance=1000):
+def get_session_name(dt):
+    hour = dt.hour
+
+    if 7 <= hour < 12:
+        return "London"
+    elif 12 <= hour < 21:
+        return "New York"
+    return "Asia"
+
+
+def run_backtest_engine(candles, signals, starting_balance=1000, fee_percent=0.04, slippage_percent=0.02):
     balance = float(starting_balance)
+    peak_balance = balance
+    max_drawdown = 0.0
     trades = []
 
     if not candles or not signals:
@@ -1157,9 +1169,38 @@ def run_backtest_engine(candles, signals, starting_balance=1000):
             "wins": 0,
             "losses": 0,
             "best_trade": 0.0,
-            "win_rate": 0.0
+            "worst_trade": 0.0,
+            "win_rate": 0.0,
+            "profit_factor": 0.0,
+            "max_drawdown": 0.0,
+            "average_win": 0.0,
+            "average_loss": 0.0,
+            "expectancy": 0.0,
+            "max_consecutive_losses": 0,
+            "fees_paid": 0.0,
+            "slippage_paid": 0.0,
+            "trades_per_day": 0.0,
+            "best_symbol": "N/A",
+            "worst_symbol": "N/A",
+            "best_timeframe": "N/A",
+            "worst_timeframe": "N/A",
+            "session_performance": {
+                "London": 0.0,
+                "New York": 0.0,
+                "Asia": 0.0
+            }
         }
         return summary, trades
+
+    total_fees = 0.0
+    total_slippage = 0.0
+    consecutive_losses = 0
+    max_consecutive_losses = 0
+    session_performance = {
+        "London": 0.0,
+        "New York": 0.0,
+        "Asia": 0.0
+    }
 
     for signal in signals:
         entry_index = signal["index"]
@@ -1169,9 +1210,12 @@ def run_backtest_engine(candles, signals, starting_balance=1000):
         take_profit = float(signal["take_profit"])
         entry_time = signal["time"]
 
+        symbol = signal.get("symbol", "N/A")
+        timeframe = signal.get("interval", "N/A")
+
         exit_price = entry_price
         exit_time = entry_time
-        pnl = 0.0
+        gross_pnl = 0.0
 
         max_forward_index = min(entry_index + 30, len(candles) - 1)
 
@@ -1186,34 +1230,58 @@ def run_backtest_engine(candles, signals, starting_balance=1000):
                 if low <= stop_loss:
                     exit_price = stop_loss
                     exit_time = candle_time
-                    pnl = stop_loss - entry_price
+                    gross_pnl = stop_loss - entry_price
                     break
                 elif high >= take_profit:
                     exit_price = take_profit
                     exit_time = candle_time
-                    pnl = take_profit - entry_price
+                    gross_pnl = take_profit - entry_price
                     break
 
             elif side == "SELL":
                 if high >= stop_loss:
                     exit_price = stop_loss
                     exit_time = candle_time
-                    pnl = entry_price - stop_loss
+                    gross_pnl = entry_price - stop_loss
                     break
                 elif low <= take_profit:
                     exit_price = take_profit
                     exit_time = candle_time
-                    pnl = entry_price - take_profit
+                    gross_pnl = entry_price - take_profit
                     break
 
             if j == max_forward_index:
                 exit_price = close
                 exit_time = candle_time
-                pnl = (exit_price - entry_price) if side == "BUY" else (entry_price - exit_price)
+                gross_pnl = (exit_price - entry_price) if side == "BUY" else (entry_price - exit_price)
 
-        balance += pnl
+        fee_cost = abs(entry_price) * (fee_percent / 100)
+        slippage_cost = abs(entry_price) * (slippage_percent / 100)
+        net_pnl = gross_pnl - fee_cost - slippage_cost
+
+        total_fees += fee_cost
+        total_slippage += slippage_cost
+
+        balance += net_pnl
+        peak_balance = max(peak_balance, balance)
+
+        drawdown = peak_balance - balance
+        max_drawdown = max(max_drawdown, drawdown)
+
+        if net_pnl < 0:
+            consecutive_losses += 1
+            max_consecutive_losses = max(max_consecutive_losses, consecutive_losses)
+        else:
+            consecutive_losses = 0
+
+        entry_dt = datetime.strptime(entry_time, "%Y-%m-%d %H:%M:%S")
+        session = get_session_name(entry_dt)
+        session_performance[session] += net_pnl
 
         trades.append({
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "session": session,
             "side": side,
             "entry_price": round(entry_price, 2),
             "exit_price": round(exit_price, 2),
@@ -1221,15 +1289,53 @@ def run_backtest_engine(candles, signals, starting_balance=1000):
             "take_profit": round(take_profit, 2),
             "entry_time": entry_time,
             "exit_time": exit_time,
-            "pnl": round(pnl, 2)
+            "gross_pnl": round(gross_pnl, 2),
+            "fee_cost": round(fee_cost, 2),
+            "slippage_cost": round(slippage_cost, 2),
+            "pnl": round(net_pnl, 2)
         })
 
     total_trades = len(trades)
-    wins = len([t for t in trades if t["pnl"] > 0])
-    losses = len([t for t in trades if t["pnl"] <= 0])
+    wins_list = [t["pnl"] for t in trades if t["pnl"] > 0]
+    losses_list = [t["pnl"] for t in trades if t["pnl"] < 0]
+
+    wins = len(wins_list)
+    losses = len(losses_list)
+
+    gross_profit = sum(wins_list)
+    gross_loss = abs(sum(losses_list))
+
+    profit_factor = round(gross_profit / gross_loss, 2) if gross_loss > 0 else round(gross_profit, 2)
+
     net_pnl = round(sum(t["pnl"] for t in trades), 2)
     best_trade = round(max([t["pnl"] for t in trades], default=0), 2)
-    win_rate = round((wins / total_trades) * 100, 2) if total_trades > 0 else 0.0
+    worst_trade = round(min([t["pnl"] for t in trades], default=0), 2)
+    average_win = round(sum(wins_list) / wins, 2) if wins else 0.0
+    average_loss = round(sum(losses_list) / losses, 2) if losses else 0.0
+    win_rate = round((wins / total_trades) * 100, 2) if total_trades else 0.0
+    loss_rate = 100 - win_rate if total_trades else 0.0
+
+    expectancy = round(
+        ((win_rate / 100) * average_win) + ((loss_rate / 100) * average_loss),
+        2
+    ) if total_trades else 0.0
+
+    first_date = datetime.strptime(trades[0]["entry_time"], "%Y-%m-%d %H:%M:%S")
+    last_date = datetime.strptime(trades[-1]["entry_time"], "%Y-%m-%d %H:%M:%S")
+    days = max((last_date - first_date).days, 1)
+    trades_per_day = round(total_trades / days, 2)
+
+    symbol_perf = {}
+    timeframe_perf = {}
+
+    for trade in trades:
+        symbol_perf[trade["symbol"]] = symbol_perf.get(trade["symbol"], 0) + trade["pnl"]
+        timeframe_perf[trade["timeframe"]] = timeframe_perf.get(trade["timeframe"], 0) + trade["pnl"]
+
+    best_symbol = max(symbol_perf, key=symbol_perf.get) if symbol_perf else "N/A"
+    worst_symbol = min(symbol_perf, key=symbol_perf.get) if symbol_perf else "N/A"
+    best_timeframe = max(timeframe_perf, key=timeframe_perf.get) if timeframe_perf else "N/A"
+    worst_timeframe = min(timeframe_perf, key=timeframe_perf.get) if timeframe_perf else "N/A"
 
     summary = {
         "starting_balance": round(starting_balance, 2),
@@ -1239,7 +1345,26 @@ def run_backtest_engine(candles, signals, starting_balance=1000):
         "wins": wins,
         "losses": losses,
         "best_trade": best_trade,
-        "win_rate": win_rate
+        "worst_trade": worst_trade,
+        "win_rate": win_rate,
+        "profit_factor": profit_factor,
+        "max_drawdown": round(max_drawdown, 2),
+        "average_win": average_win,
+        "average_loss": average_loss,
+        "expectancy": expectancy,
+        "max_consecutive_losses": max_consecutive_losses,
+        "fees_paid": round(total_fees, 2),
+        "slippage_paid": round(total_slippage, 2),
+        "trades_per_day": trades_per_day,
+        "best_symbol": best_symbol,
+        "worst_symbol": worst_symbol,
+        "best_timeframe": best_timeframe,
+        "worst_timeframe": worst_timeframe,
+        "session_performance": {
+            "London": round(session_performance["London"], 2),
+            "New York": round(session_performance["New York"], 2),
+            "Asia": round(session_performance["Asia"], 2)
+        }
     }
 
     return summary, trades
