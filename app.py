@@ -13,7 +13,7 @@ import uuid
 import sqlite3
 from datetime import datetime, timedelta, timezone
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder=".")
 CORS(app)
 
 # ---------------- CONFIG ----------------
