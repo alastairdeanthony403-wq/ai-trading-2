@@ -2,6 +2,7 @@
 # AI Trading Engine (UNIFIED BOT LOGIC + TRUE BACKTESTER)
 # Upgraded: HTF bias + liquidity sweep + BOS + FVG retrace
 # + anti-overtrading + backtester metrics
+# + trade_analysis learning table
 # ============================================================
 
 from flask import Flask, render_template, jsonify, request
@@ -97,6 +98,31 @@ def init_db():
     )
     """)
 
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS trade_analysis (
+        id TEXT PRIMARY KEY,
+        symbol TEXT,
+        timeframe TEXT,
+        strategy TEXT,
+        session TEXT,
+        trend_bias TEXT,
+        higher_tf_bias TEXT,
+        liquidity_sweep TEXT,
+        bos TEXT,
+        structure TEXT,
+        regime TEXT,
+        confidence REAL,
+        smc_score REAL,
+        result TEXT,
+        pnl REAL,
+        reason_for_entry TEXT,
+        reason_for_exit TEXT,
+        entry_time TEXT,
+        exit_time TEXT,
+        created_at TEXT
+    )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -120,6 +146,60 @@ def add_alert(message):
         "INSERT INTO alerts VALUES (?, ?, ?)",
         (str(uuid.uuid4()), message, now_str())
     )
+    conn.commit()
+    conn.close()
+
+
+def save_trade_analysis(trade, signal, reason_for_exit="Backtest exit"):
+    result = "WIN" if float(trade.get("pnl", 0) or 0) > 0 else "LOSS"
+
+    reason_for_entry = (
+        f"Signal={signal.get('type')}, "
+        f"Strategy={signal.get('strategy')}, "
+        f"HTF Bias={signal.get('higher_tf_bias')}, "
+        f"Sweep={signal.get('liquidity_sweep')}, "
+        f"BOS={signal.get('bos')}, "
+        f"Structure={signal.get('structure')}, "
+        f"Regime={signal.get('regime')}, "
+        f"Confidence={signal.get('confidence')}, "
+        f"SMC Score={signal.get('smc_score')}"
+    )
+
+    conn = get_conn()
+    c = conn.cursor()
+
+    c.execute("""
+    INSERT INTO trade_analysis (
+        id, symbol, timeframe, strategy, session,
+        trend_bias, higher_tf_bias, liquidity_sweep, bos,
+        structure, regime, confidence, smc_score,
+        result, pnl, reason_for_entry, reason_for_exit,
+        entry_time, exit_time, created_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        str(uuid.uuid4()),
+        trade.get("symbol", "N/A"),
+        trade.get("timeframe", "N/A"),
+        signal.get("strategy", "bot"),
+        trade.get("session", "N/A"),
+        signal.get("bias", "N/A"),
+        signal.get("higher_tf_bias", "N/A"),
+        signal.get("liquidity_sweep", "N/A"),
+        signal.get("bos", "N/A"),
+        signal.get("structure", "N/A"),
+        signal.get("regime", "N/A"),
+        float(signal.get("confidence", 0) or 0),
+        float(signal.get("smc_score", 0) or 0),
+        result,
+        float(trade.get("pnl", 0) or 0),
+        reason_for_entry,
+        reason_for_exit,
+        trade.get("entry_time", ""),
+        trade.get("exit_time", ""),
+        now_str()
+    ))
+
     conn.commit()
     conn.close()
 
@@ -239,11 +319,11 @@ def _fetch_coinbase_raw(symbol="BTCUSDT", interval="5m", limit=200):
     return [
         [
             int(r[0]) * 1000,
-            str(r[3]),  # open
-            str(r[2]),  # high
-            str(r[1]),  # low
-            str(r[4]),  # close
-            str(r[5]),  # volume
+            str(r[3]),
+            str(r[2]),
+            str(r[1]),
+            str(r[4]),
+            str(r[5]),
         ]
         for r in rows
     ]
@@ -442,11 +522,9 @@ def detect_liquidity_sweep(df):
     previous_high = df["high"].iloc[-21:-1].max()
     previous_low = df["low"].iloc[-21:-1].min()
 
-    # Took previous high, then closed back below it = sell-side rejection
     if current["high"] > previous_high and current["close"] < previous_high:
         return "SELL_SWEEP"
 
-    # Took previous low, then closed back above it = buy-side rejection
     if current["low"] < previous_low and current["close"] > previous_low:
         return "BUY_SWEEP"
 
@@ -505,7 +583,6 @@ def detect_fvg_retrace(df, direction):
         c1 = candles.iloc[i - 2]
         c3 = candles.iloc[i]
 
-        # Bullish FVG: candle 3 low above candle 1 high
         if direction == "BUY":
             if c3["low"] > c1["high"]:
                 fvg_low = c1["high"]
@@ -514,7 +591,6 @@ def detect_fvg_retrace(df, direction):
                 if fvg_low <= current_close <= fvg_high:
                     return True
 
-        # Bearish FVG: candle 3 high below candle 1 low
         if direction == "SELL":
             if c3["high"] < c1["low"]:
                 fvg_low = c3["high"]
@@ -547,12 +623,6 @@ def evaluate_bot_window(df, strategy="bot", symbol="BTCUSDT", interval="5m"):
             "smc_score": 0
         }
 
-    latest_close = float(df.iloc[-1]["close"])
-    latest_open = float(df.iloc[-1]["open"])
-    latest_high = float(df.iloc[-1]["high"])
-    latest_low = float(df.iloc[-1]["low"])
-    prev_close = float(df.iloc[-2]["close"])
-
     raw_signal = generate_signal(df)
     structure = get_structure(df)
     regime = get_market_regime(df)
@@ -582,6 +652,7 @@ def evaluate_bot_window(df, strategy="bot", symbol="BTCUSDT", interval="5m"):
             final_signal = "BUY"
             confidence = max(confidence, 70)
             trade_idea = "EMA momentum long"
+
         elif ema_fast.iloc[-1] < ema_slow.iloc[-1] and confidence >= 65:
             final_signal = "SELL"
             confidence = max(confidence, 70)
@@ -1051,14 +1122,17 @@ def generate_backtest_signals(candles, symbol="BTCUSDT", interval="5m", strategy
             "index": i,
             "symbol": symbol,
             "interval": interval,
+            "strategy": strategy,
             "type": signal_type,
             "price": levels["entry"],
             "time": signal_time,
             "stop_loss": levels["sl"],
             "take_profit": levels["tp"],
             "confidence": evaluation["confidence"],
+            "bias": evaluation.get("bias"),
             "structure": evaluation["structure"],
             "regime": evaluation["regime"],
+            "trade_idea": evaluation.get("trade_idea"),
             "higher_tf": evaluation.get("higher_tf"),
             "higher_tf_bias": evaluation.get("higher_tf_bias"),
             "liquidity_sweep": evaluation.get("liquidity_sweep"),
@@ -1108,6 +1182,7 @@ def run_backtest_engine(candles, signals, starting_balance=1000, fee_percent=0.0
         exit_price = entry_price
         exit_time = entry_time
         gross_pnl = 0.0
+        reason_for_exit = "Timed exit"
 
         max_forward_index = min(entry_index + 30, len(candles) - 1)
 
@@ -1123,11 +1198,13 @@ def run_backtest_engine(candles, signals, starting_balance=1000, fee_percent=0.0
                     exit_price = stop_loss
                     gross_pnl = stop_loss - entry_price
                     exit_time = candle_time
+                    reason_for_exit = "Stop loss hit"
                     break
                 elif high >= take_profit:
                     exit_price = take_profit
                     gross_pnl = take_profit - entry_price
                     exit_time = candle_time
+                    reason_for_exit = "Take profit hit"
                     break
 
             elif side == "SELL":
@@ -1135,17 +1212,20 @@ def run_backtest_engine(candles, signals, starting_balance=1000, fee_percent=0.0
                     exit_price = stop_loss
                     gross_pnl = entry_price - stop_loss
                     exit_time = candle_time
+                    reason_for_exit = "Stop loss hit"
                     break
                 elif low <= take_profit:
                     exit_price = take_profit
                     gross_pnl = entry_price - take_profit
                     exit_time = candle_time
+                    reason_for_exit = "Take profit hit"
                     break
 
             if j == max_forward_index:
                 exit_price = close
                 gross_pnl = (exit_price - entry_price) if side == "BUY" else (entry_price - exit_price)
                 exit_time = candle_time
+                reason_for_exit = "Timed exit after max forward candles"
 
         fee_cost = abs(entry_price) * (fee_percent / 100)
         slippage_cost = abs(entry_price) * (slippage_percent / 100)
@@ -1168,7 +1248,7 @@ def run_backtest_engine(candles, signals, starting_balance=1000, fee_percent=0.0
         session = get_session_name(entry_dt)
         session_performance[session] += net_pnl
 
-        trades.append({
+        trade_record = {
             "symbol": symbol,
             "timeframe": timeframe,
             "session": session,
@@ -1183,7 +1263,15 @@ def run_backtest_engine(candles, signals, starting_balance=1000, fee_percent=0.0
             "fee_cost": round(fee_cost, 2),
             "slippage_cost": round(slippage_cost, 2),
             "pnl": round(net_pnl, 2)
-        })
+        }
+
+        trades.append(trade_record)
+
+        save_trade_analysis(
+            trade_record,
+            signal,
+            reason_for_exit=reason_for_exit
+        )
 
     total_trades = len(trades)
     wins_list = [t["pnl"] for t in trades if t["pnl"] > 0]
