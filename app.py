@@ -39,6 +39,13 @@ bot_config = {
     # STRATEGY RULES
     "min_smc_score": 7,
     "blocked_crypto_hours_utc": [0, 1, 2, 3],
+
+    "paper_min_closed_trades": 100,
+    "paper_min_profit_factor": 1.3,
+    "paper_max_drawdown_percent": 10,
+    "paper_max_consecutive_losses": 3,
+    "paper_min_backtest_ranges": 2,
+    "real_trading_enabled": False,
 }
 
 DB_NAME = "trades.db"
@@ -131,7 +138,23 @@ def init_db():
     conn.close()
 
 
-init_db()
+init_db(    c.execute("""
+    CREATE TABLE IF NOT EXISTS backtest_runs (
+        id TEXT PRIMARY KEY,
+        symbol TEXT,
+        interval TEXT,
+        strategy TEXT,
+        start_date TEXT,
+        end_date TEXT,
+        total_trades INTEGER,
+        net_pnl REAL,
+        profit_factor REAL,
+        max_drawdown REAL,
+        max_drawdown_percent REAL,
+        win_rate REAL,
+        created_at TEXT
+    )
+    """))
 
 
 # ---------------- HELPERS ----------------
@@ -153,7 +176,156 @@ def add_alert(message):
     conn.commit()
     conn.close()
 
+def calculate_closed_paper_stats():
+    conn = get_conn()
+    c = conn.cursor()
 
+    c.execute("""
+    SELECT pnl, time
+    FROM trades
+    WHERE status='CLOSED'
+    ORDER BY time ASC
+    """)
+
+    rows = c.fetchall()
+    conn.close()
+
+    pnls = [float(r[0] or 0) for r in rows]
+
+    total_trades = len(pnls)
+    wins = [p for p in pnls if p > 0]
+    losses = [p for p in pnls if p < 0]
+
+    gross_profit = sum(wins)
+    gross_loss = abs(sum(losses))
+
+    profit_factor = round(gross_profit / gross_loss, 2) if gross_loss else round(gross_profit, 2)
+
+    balance = bot_config["starting_balance"]
+    peak = balance
+    max_drawdown = 0
+
+    consecutive_losses = 0
+    max_consecutive_losses = 0
+
+    for pnl in pnls:
+        balance += pnl
+        peak = max(peak, balance)
+        max_drawdown = max(max_drawdown, peak - balance)
+
+        if pnl < 0:
+            consecutive_losses += 1
+            max_consecutive_losses = max(max_consecutive_losses, consecutive_losses)
+        else:
+            consecutive_losses = 0
+
+    max_drawdown_percent = round((max_drawdown / bot_config["starting_balance"]) * 100, 2)
+
+    return {
+        "total_closed_paper_trades": total_trades,
+        "profit_factor": profit_factor,
+        "max_drawdown": round(max_drawdown, 2),
+        "max_drawdown_percent": max_drawdown_percent,
+        "max_consecutive_losses": max_consecutive_losses,
+        "net_pnl": round(sum(pnls), 2)
+    }
+
+
+def save_backtest_run(symbol, interval, strategy, start_date, end_date, summary):
+    starting_balance = float(summary.get("starting_balance", bot_config["starting_balance"]) or bot_config["starting_balance"])
+    max_drawdown = float(summary.get("max_drawdown", 0) or 0)
+    max_drawdown_percent = round((max_drawdown / starting_balance) * 100, 2) if starting_balance else 0
+
+    conn = get_conn()
+    c = conn.cursor()
+
+    c.execute("""
+    INSERT INTO backtest_runs (
+        id, symbol, interval, strategy, start_date, end_date,
+        total_trades, net_pnl, profit_factor, max_drawdown,
+        max_drawdown_percent, win_rate, created_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        str(uuid.uuid4()),
+        symbol,
+        interval,
+        strategy,
+        start_date or "",
+        end_date or "",
+        int(summary.get("total_trades", 0) or 0),
+        float(summary.get("net_pnl", 0) or 0),
+        float(summary.get("profit_factor", 0) or 0),
+        max_drawdown,
+        max_drawdown_percent,
+        float(summary.get("win_rate", 0) or 0),
+        now_str()
+    ))
+
+    conn.commit()
+    conn.close()
+
+
+def count_good_backtest_ranges():
+    conn = get_conn()
+    c = conn.cursor()
+
+    c.execute("""
+    SELECT COUNT(*)
+    FROM backtest_runs
+    WHERE total_trades >= 10
+    AND net_pnl > 0
+    AND profit_factor >= ?
+    AND max_drawdown_percent <= ?
+    """, (
+        bot_config["paper_min_profit_factor"],
+        bot_config["paper_max_drawdown_percent"]
+    ))
+
+    count = c.fetchone()[0] or 0
+    conn.close()
+
+    return count
+
+
+def get_real_trading_readiness():
+    paper_stats = calculate_closed_paper_stats()
+    good_ranges = count_good_backtest_ranges()
+
+    checks = {
+        "minimum_100_closed_paper_trades": paper_stats["total_closed_paper_trades"] >= bot_config["paper_min_closed_trades"],
+        "profit_factor_above_1_3": paper_stats["profit_factor"] >= bot_config["paper_min_profit_factor"],
+        "max_drawdown_below_10_percent": paper_stats["max_drawdown_percent"] <= bot_config["paper_max_drawdown_percent"],
+        "no_uncontrolled_losing_streaks": paper_stats["max_consecutive_losses"] <= bot_config["paper_max_consecutive_losses"],
+        "works_across_multiple_date_ranges": good_ranges >= bot_config["paper_min_backtest_ranges"],
+    }
+
+    ready = all(checks.values())
+
+    return {
+        "ready_for_real_money": ready,
+        "real_trading_enabled": bot_config.get("real_trading_enabled", False),
+        "allowed_to_trade_real_money": ready and bot_config.get("real_trading_enabled", False),
+        "paper_stats": paper_stats,
+        "good_backtest_ranges": good_ranges,
+        "required_good_backtest_ranges": bot_config["paper_min_backtest_ranges"],
+        "checks": checks,
+        "message": (
+            "Ready for real-money review."
+            if ready
+            else "Not ready for real money. Continue paper trading and testing."
+        )
+    }
+
+
+def block_real_trading_if_not_ready():
+    readiness = get_real_trading_readiness()
+
+    if not readiness["allowed_to_trade_real_money"]:
+        return False, readiness
+
+    return True, readiness
+    
 def save_trade_analysis(trade, signal, reason_for_exit="Backtest exit"):
     result = "WIN" if float(trade.get("pnl", 0) or 0) > 0 else "LOSS"
 
@@ -1669,6 +1841,14 @@ def api_backtest():
             fee_percent=fee_percent,
             slippage_percent=slippage_percent
         )
+         save_backtest_run(
+            symbol=symbol,
+            interval=interval,
+            strategy=strategy,
+            start_date=start_date,
+            end_date=end_date,
+            summary=summary
+         )
 
         return jsonify({
             "summary": summary,
@@ -1708,6 +1888,10 @@ def realtime():
 @app.route("/backtester")
 def backtester():
     return render_main_page()
+
+@app.route("/api/real-trading-readiness")
+def api_real_trading_readiness():
+    return jsonify(get_real_trading_readiness())
 
 
 # ---------------- RUN ----------------
