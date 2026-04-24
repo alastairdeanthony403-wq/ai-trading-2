@@ -1142,27 +1142,27 @@ def api_backtest():
 # ---------------- PAGE ROUTES ----------------
 @app.route("/")
 def home():
-    return render_template("index.html")
+    return render_template("preview.html")
 
 
 @app.route("/charts")
 def charts():
-    return render_template("charts.html")
+    return render_template("preview.html")
 
 
 @app.route("/analytics")
 def analytics():
-    return render_template("analytics.html")
+    return render_template("preview.html")
 
 
 @app.route("/realtime")
 def realtime():
-    return render_template("realtime.html")
+    return render_template("preview.html")
 
 
 @app.route("/backtester")
 def backtester():
-    return render_template("backtester.html")
+    return render_template("preview.html")
 
 
 # ---------------- RUN ----------------
