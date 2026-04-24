@@ -15,10 +15,19 @@ CORS(app)
 
 # ---------------- CONFIG ----------------
 bot_config = {
-    "symbols": ["BTCUSDT", "ETHUSDT"],
+    "symbols": ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT"],
     "risk_reward": 2,
     "risk_percent": 1,
-    "min_confidence": 60
+    "min_confidence": 75,
+    "starting_balance": 10000,
+
+    # ANTI-OVERTRADING RULES
+    "max_trades_per_day": 5,
+    "max_daily_loss_percent": 3,
+    "max_consecutive_losses": 2,
+    "avoid_quiet_market": True,
+    "avoid_sideways_market": True,
+    "min_volume_multiplier": 0.8
 }
 
 DB_NAME = "trades.db"
