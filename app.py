@@ -1,5 +1,7 @@
 # ============================================================
 # AI Trading Engine (UNIFIED BOT LOGIC + TRUE BACKTESTER)
+# Upgraded: HTF bias + liquidity sweep + BOS + FVG retrace
+# + anti-overtrading + backtester metrics
 # ============================================================
 
 from flask import Flask, render_template, jsonify, request
@@ -27,7 +29,11 @@ bot_config = {
     "max_consecutive_losses": 2,
     "avoid_quiet_market": True,
     "avoid_sideways_market": True,
-    "min_volume_multiplier": 0.8
+    "min_volume_multiplier": 0.8,
+
+    # STRATEGY RULES
+    "min_smc_score": 7,
+    "blocked_crypto_hours_utc": [0, 1, 2, 3],
 }
 
 DB_NAME = "trades.db"
@@ -209,6 +215,7 @@ def _aggregate_coinbase_1h_to_4h(rows, limit):
             open_price = float(bucket[0][3])
             close_price = float(bucket[-1][4])
             volume = sum(float(r[5]) for r in bucket)
+
             grouped.append([ts, low, high, open_price, close_price, volume])
             bucket = []
 
@@ -232,11 +239,11 @@ def _fetch_coinbase_raw(symbol="BTCUSDT", interval="5m", limit=200):
     return [
         [
             int(r[0]) * 1000,
-            str(r[3]),
-            str(r[2]),
-            str(r[1]),
-            str(r[4]),
-            str(r[5])
+            str(r[3]),  # open
+            str(r[2]),  # high
+            str(r[1]),  # low
+            str(r[4]),  # close
+            str(r[5]),  # volume
         ]
         for r in rows
     ]
@@ -300,7 +307,7 @@ def fetch_binance(symbol, interval="1m", limit=100):
         return None
 
 
-# ---------------- BOT LOGIC ----------------
+# ---------------- BASE BOT LOGIC ----------------
 def generate_signal(df):
     if df is None or len(df) < 2:
         return "HOLD"
@@ -330,6 +337,7 @@ def get_structure(df):
         return "Bullish Structure"
     elif c0 < sma20 and c0 < c1 < c2:
         return "Bearish Structure"
+
     return "Range / Mixed"
 
 
@@ -350,6 +358,7 @@ def get_market_regime(df):
         return "Trending"
     elif range_percent > 1.0:
         return "Active"
+
     return "Range / Quiet"
 
 
@@ -400,15 +409,142 @@ def get_trade_idea(signal):
     return "Wait for clearer confirmation"
 
 
-def evaluate_bot_window(df, strategy="bot"):
-    if df is None or len(df) < 20:
+# ---------------- ADVANCED STRATEGY FILTERS ----------------
+def get_higher_timeframe(interval):
+    if interval in ["1m", "5m", "15m"]:
+        return "1h"
+    if interval == "1h":
+        return "4h"
+    return "4h"
+
+
+def get_trend_bias(df):
+    if df is None or len(df) < 50:
+        return "Neutral"
+
+    closes = df["close"]
+    ema_fast = closes.ewm(span=20, adjust=False).mean()
+    ema_slow = closes.ewm(span=50, adjust=False).mean()
+
+    if ema_fast.iloc[-1] > ema_slow.iloc[-1]:
+        return "Bullish"
+    elif ema_fast.iloc[-1] < ema_slow.iloc[-1]:
+        return "Bearish"
+
+    return "Neutral"
+
+
+def detect_liquidity_sweep(df):
+    if df is None or len(df) < 25:
+        return None
+
+    current = df.iloc[-1]
+    previous_high = df["high"].iloc[-21:-1].max()
+    previous_low = df["low"].iloc[-21:-1].min()
+
+    # Took previous high, then closed back below it = sell-side rejection
+    if current["high"] > previous_high and current["close"] < previous_high:
+        return "SELL_SWEEP"
+
+    # Took previous low, then closed back above it = buy-side rejection
+    if current["low"] < previous_low and current["close"] > previous_low:
+        return "BUY_SWEEP"
+
+    return None
+
+
+def detect_break_of_structure(df):
+    if df is None or len(df) < 30:
+        return None
+
+    recent_high = df["high"].iloc[-15:-1].max()
+    recent_low = df["low"].iloc[-15:-1].min()
+    close = df.iloc[-1]["close"]
+
+    if close > recent_high:
+        return "BULLISH_BOS"
+
+    if close < recent_low:
+        return "BEARISH_BOS"
+
+    return None
+
+
+def price_in_discount_zone(df):
+    if df is None or len(df) < 30:
+        return False
+
+    recent_high = df["high"].tail(30).max()
+    recent_low = df["low"].tail(30).min()
+    close = df.iloc[-1]["close"]
+
+    midpoint = (recent_high + recent_low) / 2
+    return close <= midpoint
+
+
+def price_in_premium_zone(df):
+    if df is None or len(df) < 30:
+        return False
+
+    recent_high = df["high"].tail(30).max()
+    recent_low = df["low"].tail(30).min()
+    close = df.iloc[-1]["close"]
+
+    midpoint = (recent_high + recent_low) / 2
+    return close >= midpoint
+
+
+def detect_fvg_retrace(df, direction):
+    if df is None or len(df) < 10:
+        return False
+
+    candles = df.tail(8).reset_index(drop=True)
+    current_close = candles.iloc[-1]["close"]
+
+    for i in range(2, len(candles)):
+        c1 = candles.iloc[i - 2]
+        c3 = candles.iloc[i]
+
+        # Bullish FVG: candle 3 low above candle 1 high
+        if direction == "BUY":
+            if c3["low"] > c1["high"]:
+                fvg_low = c1["high"]
+                fvg_high = c3["low"]
+
+                if fvg_low <= current_close <= fvg_high:
+                    return True
+
+        # Bearish FVG: candle 3 high below candle 1 low
+        if direction == "SELL":
+            if c3["high"] < c1["low"]:
+                fvg_low = c3["high"]
+                fvg_high = c1["low"]
+
+                if fvg_low <= current_close <= fvg_high:
+                    return True
+
+    return False
+
+
+def session_allowed():
+    hour = datetime.utcnow().hour
+    return hour not in bot_config["blocked_crypto_hours_utc"]
+
+
+def evaluate_bot_window(df, strategy="bot", symbol="BTCUSDT", interval="5m"):
+    if df is None or len(df) < 50:
         return {
             "signal": "HOLD",
             "bias": "Neutral",
             "structure": "Range / Mixed",
             "regime": "Unknown",
             "confidence": 50,
-            "trade_idea": "Not enough data"
+            "trade_idea": "Not enough data",
+            "higher_tf": get_higher_timeframe(interval),
+            "higher_tf_bias": "Neutral",
+            "liquidity_sweep": None,
+            "bos": None,
+            "smc_score": 0
         }
 
     latest_close = float(df.iloc[-1]["close"])
@@ -421,49 +557,91 @@ def evaluate_bot_window(df, strategy="bot"):
     structure = get_structure(df)
     regime = get_market_regime(df)
     confidence = estimate_confidence(df, raw_signal)
-    bias = get_bias_from_signal(raw_signal)
-    trade_idea = get_trade_idea(raw_signal)
+
+    higher_tf = get_higher_timeframe(interval)
+    higher_df = fetch_binance(symbol, interval=higher_tf, limit=100)
+    higher_tf_bias = get_trend_bias(higher_df)
+
+    liquidity_sweep = detect_liquidity_sweep(df)
+    bos = detect_break_of_structure(df)
 
     final_signal = "HOLD"
+    trade_idea = "Wait for clearer confirmation"
+    smc_score = 0
 
     if strategy == "basic":
         final_signal = raw_signal
-
-    elif strategy == "smart_money":
-        candle_body = abs(latest_close - latest_open)
-        candle_range = latest_high - latest_low if latest_high != latest_low else 1
-
-        if latest_close > latest_open and candle_body > candle_range * 0.6 and structure == "Bullish Structure":
-            final_signal = "BUY"
-            confidence = max(confidence, 75)
-        elif latest_close < latest_open and candle_body > candle_range * 0.6 and structure == "Bearish Structure":
-            final_signal = "SELL"
-            confidence = max(confidence, 75)
+        trade_idea = get_trade_idea(final_signal)
 
     elif strategy == "ema_rsi":
         closes = df["close"]
-        avg_close = closes.tail(15).mean()
+        ema_fast = closes.ewm(span=9, adjust=False).mean()
+        ema_slow = closes.ewm(span=21, adjust=False).mean()
 
-        if latest_close > avg_close and prev_close < avg_close:
+        if ema_fast.iloc[-1] > ema_slow.iloc[-1] and confidence >= 65:
             final_signal = "BUY"
             confidence = max(confidence, 70)
-        elif latest_close < avg_close and prev_close > avg_close:
+            trade_idea = "EMA momentum long"
+        elif ema_fast.iloc[-1] < ema_slow.iloc[-1] and confidence >= 65:
             final_signal = "SELL"
             confidence = max(confidence, 70)
+            trade_idea = "EMA momentum short"
 
-    else:
-        if raw_signal == "BUY" and structure == "Bullish Structure" and confidence >= bot_config["min_confidence"]:
+    elif strategy in ["smart_money", "bot"]:
+        buy_conditions = [
+            higher_tf_bias == "Bullish",
+            liquidity_sweep == "BUY_SWEEP",
+            bos == "BULLISH_BOS",
+            price_in_discount_zone(df),
+            detect_fvg_retrace(df, "BUY"),
+            confidence >= bot_config["min_confidence"],
+            regime not in ["Range / Quiet", "Unknown"],
+            structure != "Range / Mixed",
+            session_allowed()
+        ]
+
+        sell_conditions = [
+            higher_tf_bias == "Bearish",
+            liquidity_sweep == "SELL_SWEEP",
+            bos == "BEARISH_BOS",
+            price_in_premium_zone(df),
+            detect_fvg_retrace(df, "SELL"),
+            confidence >= bot_config["min_confidence"],
+            regime not in ["Range / Quiet", "Unknown"],
+            structure != "Range / Mixed",
+            session_allowed()
+        ]
+
+        buy_score = sum(1 for condition in buy_conditions if condition)
+        sell_score = sum(1 for condition in sell_conditions if condition)
+
+        if buy_score >= bot_config["min_smc_score"]:
             final_signal = "BUY"
-        elif raw_signal == "SELL" and structure == "Bearish Structure" and confidence >= bot_config["min_confidence"]:
+            confidence = max(confidence, 80)
+            trade_idea = "HTF bullish + liquidity sweep + BOS + retrace entry"
+            smc_score = buy_score
+
+        elif sell_score >= bot_config["min_smc_score"]:
             final_signal = "SELL"
+            confidence = max(confidence, 80)
+            trade_idea = "HTF bearish + liquidity sweep + BOS + retrace entry"
+            smc_score = sell_score
+
+        else:
+            smc_score = max(buy_score, sell_score)
 
     return {
         "signal": final_signal,
-        "bias": get_bias_from_signal(final_signal) if final_signal != "HOLD" else bias,
+        "bias": get_bias_from_signal(final_signal) if final_signal != "HOLD" else higher_tf_bias,
         "structure": structure,
         "regime": regime,
         "confidence": confidence,
-        "trade_idea": trade_idea
+        "trade_idea": trade_idea,
+        "higher_tf": higher_tf,
+        "higher_tf_bias": higher_tf_bias,
+        "liquidity_sweep": liquidity_sweep,
+        "bos": bos,
+        "smc_score": smc_score
     }
 
 
@@ -489,12 +667,17 @@ def calculate_trade_levels(df, signal):
     }
 
 
-def get_symbol_summary(symbol, strategy="bot"):
-    df = fetch_binance(symbol)
+def get_symbol_summary(symbol, strategy="bot", interval="1m"):
+    df = fetch_binance(symbol, interval=interval, limit=200)
     if df is None:
         return None
 
-    evaluation = evaluate_bot_window(df, strategy=strategy)
+    evaluation = evaluate_bot_window(
+        df,
+        strategy=strategy,
+        symbol=symbol,
+        interval=interval
+    )
 
     return {
         "symbol": symbol,
@@ -504,13 +687,18 @@ def get_symbol_summary(symbol, strategy="bot"):
         "structure": evaluation["structure"],
         "regime": evaluation["regime"],
         "confidence": evaluation["confidence"],
-        "trade_idea": evaluation["trade_idea"]
+        "trade_idea": evaluation["trade_idea"],
+        "higher_tf": evaluation["higher_tf"],
+        "higher_tf_bias": evaluation["higher_tf_bias"],
+        "liquidity_sweep": evaluation["liquidity_sweep"],
+        "bos": evaluation["bos"],
+        "smc_score": evaluation["smc_score"]
     }
 
 
 def get_engine_snapshot():
     for symbol in bot_config["symbols"]:
-        summary = get_symbol_summary(symbol, strategy="bot")
+        summary = get_symbol_summary(symbol, strategy="bot", interval="1m")
         if summary:
             return summary
 
@@ -644,16 +832,25 @@ def can_open_new_trade(symbol, df, evaluation):
     if evaluation["structure"] == "Range / Mixed":
         return False, "Structure is mixed/ranging"
 
+    if evaluation.get("smc_score", 0) < bot_config["min_smc_score"]:
+        return False, f"SMC confirmation too weak: {evaluation.get('smc_score', 0)}"
+
     return True, "Allowed"
 
 
 # ---------------- TRADES ----------------
 def open_trade(symbol, signal, price):
-    df = fetch_binance(symbol)
+    df = fetch_binance(symbol, interval="1m", limit=200)
     if df is None:
         return {"ok": False, "reason": "No market data"}
 
-    evaluation = evaluate_bot_window(df, strategy="bot")
+    evaluation = evaluate_bot_window(
+        df,
+        strategy="bot",
+        symbol=symbol,
+        interval="1m"
+    )
+
     allowed, reason = can_open_new_trade(symbol, df, evaluation)
 
     if not allowed:
@@ -689,7 +886,12 @@ def open_trade(symbol, signal, price):
     conn.commit()
     conn.close()
 
-    add_alert(f"OPEN {symbol} {signal} @ {round(price, 2)} | Confidence {round(evaluation['confidence'], 1)}%")
+    add_alert(
+        f"OPEN {symbol} {signal} @ {round(price, 2)} | "
+        f"Confidence {round(evaluation['confidence'], 1)}% | "
+        f"SMC Score {evaluation.get('smc_score', 0)}"
+    )
+
     return {"ok": True, "trade_id": trade_id}
 
 
@@ -750,7 +952,7 @@ def get_chart_signals(symbol="BTCUSDT", interval="1m", limit=200):
     raw = fetch_binance_raw(symbol=symbol, interval=interval, limit=limit)
     df = raw_candles_to_df(raw)
 
-    if df is None or len(df) < 30:
+    if df is None or len(df) < 50:
         return {"markers": [], "trade_levels": [], "annotations": []}
 
     markers = []
@@ -760,19 +962,27 @@ def get_chart_signals(symbol="BTCUSDT", interval="1m", limit=200):
     highs = df["high"].tolist()
     lows = df["low"].tolist()
 
-    for i in range(20, len(df)):
+    for i in range(50, len(df)):
         window_df = df.iloc[:i + 1].copy().reset_index(drop=True)
-        evaluation = evaluate_bot_window(window_df, strategy="bot")
+
+        evaluation = evaluate_bot_window(
+            window_df,
+            strategy="bot",
+            symbol=symbol,
+            interval=interval
+        )
+
         signal = evaluation["signal"]
 
         if signal in ["BUY", "SELL"]:
             levels = calculate_trade_levels(window_df, signal)
+
             markers.append({
                 "time": times[i],
                 "position": "belowBar" if signal == "BUY" else "aboveBar",
                 "color": "#22c55e" if signal == "BUY" else "#ef4444",
                 "shape": "arrowUp" if signal == "BUY" else "arrowDown",
-                "text": f"{signal} {symbol}"
+                "text": f"{signal} {symbol} | SMC {evaluation.get('smc_score', 0)}"
             })
 
             trade_levels.append({
@@ -816,12 +1026,19 @@ def generate_backtest_signals(candles, symbol="BTCUSDT", interval="5m", strategy
     df = raw_candles_to_df(candles)
     signals = []
 
-    if df is None or len(df) < 21:
+    if df is None or len(df) < 50:
         return signals
 
-    for i in range(20, len(df)):
+    for i in range(50, len(df)):
         window_df = df.iloc[:i + 1].copy().reset_index(drop=True)
-        evaluation = evaluate_bot_window(window_df, strategy=strategy)
+
+        evaluation = evaluate_bot_window(
+            window_df,
+            strategy=strategy,
+            symbol=symbol,
+            interval=interval
+        )
+
         signal_type = evaluation["signal"]
 
         if signal_type not in ["BUY", "SELL"]:
@@ -841,7 +1058,12 @@ def generate_backtest_signals(candles, symbol="BTCUSDT", interval="5m", strategy
             "take_profit": levels["tp"],
             "confidence": evaluation["confidence"],
             "structure": evaluation["structure"],
-            "regime": evaluation["regime"]
+            "regime": evaluation["regime"],
+            "higher_tf": evaluation.get("higher_tf"),
+            "higher_tf_bias": evaluation.get("higher_tf_bias"),
+            "liquidity_sweep": evaluation.get("liquidity_sweep"),
+            "bos": evaluation.get("bos"),
+            "smc_score": evaluation.get("smc_score", 0)
         })
 
     return signals
@@ -1090,7 +1312,13 @@ def chart_confirmation():
 def chart_status():
     symbol = request.args.get("symbol", "BTCUSDT").upper()
     strategy = request.args.get("strategy", "bot").lower()
-    summary = get_symbol_summary(symbol, strategy=strategy)
+    interval = request.args.get("interval", "1m")
+
+    summary = get_symbol_summary(
+        symbol,
+        strategy=strategy,
+        interval=interval
+    )
 
     if not summary:
         return jsonify({
