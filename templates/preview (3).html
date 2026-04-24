@@ -1,0 +1,2002 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Trading Terminal | Professional</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+
+  <style>
+    :root {
+      --bg: #07101d;
+      --bg-2: #0b1220;
+      --panel: rgba(15, 23, 42, 0.88);
+      --panel-2: rgba(17, 24, 39, 0.95);
+      --sidebar: rgba(8, 15, 28, 0.96);
+      --border: rgba(148, 163, 184, 0.16);
+      --text: #e5edf7;
+      --muted: #94a3b8;
+      --blue: #3b82f6;
+      --blue-2: #2563eb;
+      --green: #22c55e;
+      --red: #ef4444;
+      --amber: #f59e0b;
+      --purple: #8b5cf6;
+      --shadow: 0 18px 44px rgba(0, 0, 0, 0.34);
+      --radius: 20px;
+      --input-bg: #0c1729;
+      --chart-bg: #0c1729;
+      --table-bg: rgba(255,255,255,0.02);
+      --hero-grad-1: rgba(59,130,246,0.08);
+      --hero-grad-2: rgba(139,92,246,0.08);
+    }
+
+    html[data-theme="light"] {
+      --bg: #eef4fb;
+      --bg-2: #f8fbff;
+      --panel: rgba(255, 255, 255, 0.92);
+      --panel-2: rgba(255, 255, 255, 0.98);
+      --sidebar: rgba(243, 248, 255, 0.96);
+      --border: rgba(148, 163, 184, 0.24);
+      --text: #0f172a;
+      --muted: #475569;
+      --blue: #2563eb;
+      --blue-2: #1d4ed8;
+      --green: #16a34a;
+      --red: #dc2626;
+      --amber: #d97706;
+      --purple: #7c3aed;
+      --shadow: 0 14px 34px rgba(15, 23, 42, 0.10);
+      --input-bg: #ffffff;
+      --chart-bg: #ffffff;
+      --table-bg: rgba(255,255,255,0.70);
+      --hero-grad-1: rgba(37,99,235,0.07);
+      --hero-grad-2: rgba(124,58,237,0.06);
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      font-family: Arial, sans-serif;
+      background:
+        radial-gradient(circle at top left, var(--hero-grad-1), transparent 28%),
+        radial-gradient(circle at top right, var(--hero-grad-2), transparent 22%),
+        linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 100%);
+      color: var(--text);
+      transition: background 0.25s ease, color 0.25s ease;
+    }
+
+    .app-shell {
+      display: grid;
+      grid-template-columns: 270px 1fr;
+      min-height: 100vh;
+    }
+
+    .sidebar {
+      background: var(--sidebar);
+      border-right: 1px solid var(--border);
+      padding: 20px 16px;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      overflow-x: hidden;
+      backdrop-filter: blur(12px);
+      transition: background 0.25s ease, border-color 0.25s ease;
+    }
+
+    .sidebar::-webkit-scrollbar {
+      width: 9px;
+    }
+
+    .sidebar::-webkit-scrollbar-thumb {
+      background: rgba(148, 163, 184, 0.35);
+      border-radius: 999px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      margin-bottom: 22px;
+    }
+
+    .brand-logo {
+      width: 44px;
+      height: 44px;
+      border-radius: 14px;
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      font-size: 18px;
+      color: white;
+      background: linear-gradient(135deg, var(--blue), var(--purple));
+      box-shadow: var(--shadow);
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 800;
+    }
+
+    .brand p {
+      margin: 3px 0 0;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .nav-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+
+    .nav-btn {
+      width: 100%;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--muted);
+      border-radius: 14px;
+      padding: 13px 14px;
+      text-align: left;
+      font-weight: 700;
+      font-size: 14px;
+      cursor: pointer;
+      transition: 0.18s ease;
+    }
+
+    .nav-btn:hover {
+      background: rgba(255,255,255,0.03);
+      border-color: var(--border);
+      color: var(--text);
+    }
+
+    html[data-theme="light"] .nav-btn:hover {
+      background: rgba(15,23,42,0.03);
+    }
+
+    .nav-btn.active {
+      background: linear-gradient(135deg, rgba(37,99,235,0.28), rgba(59,130,246,0.18));
+      border-color: rgba(59,130,246,0.28);
+      color: #fff;
+    }
+
+    .sidebar-meta {
+      margin-top: 18px;
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: rgba(255,255,255,0.02);
+      transition: background 0.25s ease, border-color 0.25s ease;
+    }
+
+    html[data-theme="light"] .sidebar-meta {
+      background: rgba(15,23,42,0.02);
+    }
+
+    .sidebar-meta-title {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .meta-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      font-size: 13px;
+    }
+
+    html[data-theme="light"] .meta-row {
+      border-bottom: 1px solid rgba(15,23,42,0.06);
+    }
+
+    .meta-row:last-child {
+      border-bottom: none;
+    }
+
+    .main {
+      padding: 20px;
+      min-width: 0;
+    }
+
+    .topbar {
+      display: grid;
+      grid-template-columns: 1.4fr 1fr;
+      gap: 18px;
+      margin-bottom: 20px;
+    }
+
+    .hero-card,
+    .top-stats,
+    .panel,
+    .stat-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(10px);
+      transition: background 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+    }
+
+    .hero-card {
+      padding: 20px;
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: center;
+    }
+
+    .hero-card h2 {
+      margin: 0;
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.4px;
+    }
+
+    .hero-card p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .hero-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 16px;
+    }
+
+    .btn {
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.03);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 11px 14px;
+      cursor: pointer;
+      font-weight: 700;
+      transition: 0.18s ease;
+    }
+
+    html[data-theme="light"] .btn {
+      background: rgba(15,23,42,0.03);
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+      background: rgba(255,255,255,0.05);
+    }
+
+    html[data-theme="light"] .btn:hover {
+      background: rgba(15,23,42,0.06);
+    }
+
+    .btn.primary {
+      background: linear-gradient(135deg, var(--blue-2), var(--blue));
+      border-color: transparent;
+      color: white;
+    }
+
+    .top-stats {
+      padding: 16px;
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+
+    .mini-top-stat {
+      border: 1px solid rgba(255,255,255,0.06);
+      background: rgba(255,255,255,0.03);
+      border-radius: 16px;
+      padding: 14px;
+      transition: background 0.25s ease, border-color 0.25s ease;
+    }
+
+    html[data-theme="light"] .mini-top-stat {
+      background: rgba(15,23,42,0.03);
+      border: 1px solid rgba(15,23,42,0.06);
+    }
+
+    .mini-top-stat .label {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 8px;
+    }
+
+    .mini-top-stat .value {
+      font-size: 22px;
+      font-weight: 800;
+    }
+
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    .stat-card {
+      padding: 16px;
+    }
+
+    .stat-card .label {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.45px;
+    }
+
+    .stat-card .value {
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+    }
+
+    .page {
+      display: none;
+    }
+
+    .page.active {
+      display: block;
+    }
+
+    .panel {
+      padding: 18px;
+    }
+
+    .panel-title {
+      font-size: 20px;
+      font-weight: 800;
+      margin: 0 0 6px;
+    }
+
+    .panel-subtitle {
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 16px;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 18px;
+    }
+
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 18px;
+    }
+
+    .grid-5 {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 18px;
+    }
+
+    .signal-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 14px;
+    }
+
+    .signal-card {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 18px;
+      padding: 16px;
+      transition: background 0.25s ease, border-color 0.25s ease;
+    }
+
+    html[data-theme="light"] .signal-card {
+      background: rgba(15,23,42,0.03);
+      border: 1px solid rgba(15,23,42,0.06);
+    }
+
+    .signal-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      gap: 10px;
+    }
+
+    .symbol {
+      font-size: 18px;
+      font-weight: 800;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 800;
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .badge-buy {
+      background: rgba(34,197,94,0.12);
+      color: var(--green);
+      border-color: rgba(34,197,94,0.28);
+    }
+
+    .badge-sell {
+      background: rgba(239,68,68,0.12);
+      color: var(--red);
+      border-color: rgba(239,68,68,0.28);
+    }
+
+    .badge-hold {
+      background: rgba(245,158,11,0.12);
+      color: var(--amber);
+      border-color: rgba(245,158,11,0.28);
+    }
+
+    .signal-info {
+      display: grid;
+      gap: 6px;
+      font-size: 13px;
+      color: var(--text);
+    }
+
+    .signal-info span {
+      color: var(--muted);
+    }
+
+    .feed-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-height: 420px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+
+    .feed-item {
+      background: rgba(255,255,255,0.03);
+      border-left: 4px solid var(--blue);
+      border-radius: 14px;
+      padding: 12px 14px;
+      transition: background 0.25s ease;
+    }
+
+    html[data-theme="light"] .feed-item {
+      background: rgba(15,23,42,0.03);
+    }
+
+    .feed-item.buy { border-left-color: var(--green); }
+    .feed-item.sell { border-left-color: var(--red); }
+    .feed-item.info { border-left-color: var(--blue); }
+
+    .feed-time {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    .feed-text {
+      font-size: 14px;
+      line-height: 1.4;
+    }
+
+    .positive { color: var(--green) !important; }
+    .negative { color: var(--red) !important; }
+    .neutral { color: var(--muted) !important; }
+
+    .controls-grid {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 14px;
+    }
+
+    .control label {
+      display: block;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 8px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+
+    .control select,
+    .control input {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,0.1);
+      background: var(--input-bg);
+      color: var(--text);
+      outline: none;
+      transition: background 0.25s ease, border-color 0.25s ease, color 0.25s ease;
+    }
+
+    html[data-theme="light"] .control select,
+    html[data-theme="light"] .control input {
+      border: 1px solid rgba(15,23,42,0.10);
+    }
+
+    .chart-box {
+      position: relative;
+      height: 560px;
+      background: var(--chart-bg);
+      border-radius: 18px;
+      overflow: hidden;
+      transition: background 0.25s ease;
+    }
+
+    .chart-box-sm {
+      position: relative;
+      height: 580px;
+      background: var(--chart-bg);
+      border-radius: 18px;
+      overflow: hidden;
+      transition: background 0.25s ease;
+    }
+
+    #mainChart, #btChart {
+      width: 100%;
+      height: 100%;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,0.06);
+      transition: border-color 0.25s ease;
+    }
+
+    html[data-theme="light"] .table-wrap {
+      border: 1px solid rgba(15,23,42,0.08);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 760px;
+      background: var(--table-bg);
+      transition: background 0.25s ease;
+    }
+
+    th, td {
+      padding: 12px 10px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      text-align: left;
+      font-size: 14px;
+    }
+
+    html[data-theme="light"] th,
+    html[data-theme="light"] td {
+      border-bottom: 1px solid rgba(15,23,42,0.06);
+    }
+
+    th {
+      color: var(--muted);
+      font-weight: 800;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.45px;
+    }
+
+    .error-box, .success-box {
+      display: none;
+      margin-bottom: 16px;
+      padding: 14px 16px;
+      border-radius: 16px;
+    }
+
+    .error-box.show {
+      display: block;
+      background: rgba(127,29,29,0.25);
+      color: #fecaca;
+      border: 1px solid rgba(239,68,68,0.35);
+    }
+
+    .success-box.show {
+      display: block;
+      background: rgba(20,83,45,0.22);
+      color: #bbf7d0;
+      border: 1px solid rgba(34,197,94,0.35);
+    }
+
+    .loader {
+      width: 20px;
+      height: 20px;
+      border: 3px solid rgba(255,255,255,0.16);
+      border-top-color: var(--blue);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    @media (max-width: 1280px) {
+      .stats-row {
+        grid-template-columns: repeat(3, 1fr);
+      }
+      .controls-grid {
+        grid-template-columns: repeat(3, 1fr);
+      }
+      .grid-2,
+      .topbar {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 980px) {
+      .app-shell {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        position: relative;
+        height: auto;
+        max-height: 360px;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .grid-4,
+      .grid-5,
+      .stats-row {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    @media (max-width: 680px) {
+      .main {
+        padding: 14px;
+      }
+
+      .controls-grid,
+      .grid-4,
+      .grid-5,
+      .stats-row {
+        grid-template-columns: 1fr;
+      }
+
+      .hero-card {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-logo">AI</div>
+        <div>
+          <h1>Trading Terminal</h1>
+          <p>Professional dark/light workspace</p>
+        </div>
+      </div>
+
+      <div class="nav-list">
+        <button class="nav-btn active" data-page="dashboard">🏠 Dashboard</button>
+        <button class="nav-btn" data-page="charts">📉 Charts</button>
+        <button class="nav-btn" data-page="analytics">📊 Analytics</button>
+        <button class="nav-btn" data-page="realtime">⚡ Realtime</button>
+        <button class="nav-btn" data-page="backtester">🧪 Backtester</button>
+      </div>
+
+      <div class="sidebar-meta">
+        <div class="sidebar-meta-title">Connection</div>
+        <div class="meta-row"><span>Engine</span><strong id="sbEngineStatus">Starting</strong></div>
+        <div class="meta-row"><span>Socket</span><strong id="sbSocketStatus">Connecting</strong></div>
+        <div class="meta-row"><span>Mode</span><strong>Shared Live Bus</strong></div>
+        <div class="meta-row"><span>Last Update</span><strong id="sbLastUpdate">--</strong></div>
+      </div>
+
+      <div class="sidebar-meta">
+        <div class="sidebar-meta-title">Workspace</div>
+        <div class="meta-row"><span>Theme</span><strong id="themeLabel">Dark</strong></div>
+        <div class="meta-row"><span>Loader</span><strong>Module Based</strong></div>
+        <div class="meta-row"><span>Layout</span><strong>Sidebar + Top Stats</strong></div>
+      </div>
+
+      <div class="sidebar-meta">
+        <div class="sidebar-meta-title">Appearance</div>
+        <button class="btn" id="themeToggleBtn" style="width:100%;">☀️ Switch to Light Mode</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="topbar">
+        <div class="hero-card">
+          <div>
+            <h2>AI Trading Terminal</h2>
+            <p>
+              One professional workspace for live signals, charts, analytics,
+              realtime trade monitoring, and unified bot backtesting.
+            </p>
+            <div class="hero-actions">
+              <button class="btn primary" id="globalRefreshBtn">Refresh Engine</button>
+              <button class="btn" id="goBacktesterBtn">Open Backtester</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="top-stats">
+          <div class="mini-top-stat">
+            <div class="label">Account Balance</div>
+            <div class="value" id="topBalance">$0.00</div>
+          </div>
+          <div class="mini-top-stat">
+            <div class="label">Open Trades</div>
+            <div class="value" id="topOpenTrades">0</div>
+          </div>
+          <div class="mini-top-stat">
+            <div class="label">Win Rate</div>
+            <div class="value" id="topWinRate">0%</div>
+          </div>
+          <div class="mini-top-stat">
+            <div class="label">Best Signal</div>
+            <div class="value" id="topBestSignal">0%</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- DASHBOARD -->
+      <section id="page-dashboard" class="page active">
+        <div class="stats-row">
+          <div class="stat-card"><div class="label">Balance</div><div id="dashBalance" class="value">$0.00</div></div>
+          <div class="stat-card"><div class="label">Win Rate</div><div id="dashWinRate" class="value">0%</div></div>
+          <div class="stat-card"><div class="label">Trades</div><div id="dashTrades" class="value">0</div></div>
+          <div class="stat-card"><div class="label">Wins</div><div id="dashWins" class="value positive">0</div></div>
+          <div class="stat-card"><div class="label">Losses</div><div id="dashLosses" class="value negative">0</div></div>
+          <div class="stat-card"><div class="label">Best Signal</div><div id="dashBestSignal" class="value">0%</div></div>
+        </div>
+
+        <div class="grid-2">
+          <div class="panel">
+            <h3 class="panel-title">Live Signals</h3>
+            <div class="panel-subtitle" id="dashboardLastUpdate">Waiting for engine refresh...</div>
+            <div id="dashboardSignals" class="signal-grid"></div>
+          </div>
+
+          <div class="panel">
+            <h3 class="panel-title">Alert Feed</h3>
+            <div class="panel-subtitle">Recent engine and trade activity</div>
+            <div id="dashboardAlerts" class="feed-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- CHARTS -->
+      <section id="page-charts" class="page">
+        <div class="panel" style="margin-bottom:18px;">
+          <div class="controls-grid">
+            <div class="control">
+              <label>Symbol</label>
+              <select id="chartSymbol">
+                <option value="BTCUSDT">BTCUSDT</option>
+                <option value="ETHUSDT">ETHUSDT</option>
+                <option value="BNBUSDT">BNBUSDT</option>
+                <option value="SOLUSDT">SOLUSDT</option>
+              </select>
+            </div>
+
+            <div class="control">
+              <label>Interval</label>
+              <select id="chartInterval">
+                <option value="1m">1m</option>
+                <option value="5m">5m</option>
+                <option value="15m">15m</option>
+                <option value="1h">1h</option>
+                <option value="4h">4h</option>
+              </select>
+            </div>
+
+            <div class="control">
+              <label>Strategy View</label>
+              <select id="chartStrategy">
+                <option value="bot" selected>Unified Live Bot</option>
+                <option value="basic">Basic</option>
+                <option value="smart_money">Smart Money</option>
+                <option value="ema_rsi">EMA + RSI</option>
+              </select>
+            </div>
+
+            <div class="control" style="display:flex;align-items:flex-end;">
+              <button id="chartRefreshBtn" class="btn primary" style="width:100%;">Refresh Chart</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="panel">
+            <h3 class="panel-title">Execution Chart</h3>
+            <div class="panel-subtitle">Candles, markers, and recent trade levels</div>
+            <div class="chart-box">
+              <div id="mainChart"></div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <h3 class="panel-title">Trade Levels</h3>
+            <div class="panel-subtitle">Recent backend trade levels</div>
+            <div id="chartLevels"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ANALYTICS -->
+      <section id="page-analytics" class="page">
+        <div class="grid-4" style="margin-bottom:18px;">
+          <div class="stat-card"><div class="label">Total Trades</div><div id="anTotalTrades" class="value">0</div></div>
+          <div class="stat-card"><div class="label">Win Rate</div><div id="anWinRate" class="value">0%</div></div>
+          <div class="stat-card"><div class="label">Wins / Losses</div><div id="anWinsLosses" class="value">0 / 0</div></div>
+          <div class="stat-card"><div class="label">Net PnL</div><div id="anNetPnl" class="value">$0.00</div></div>
+        </div>
+
+        <div class="grid-2">
+          <div class="panel">
+            <h3 class="panel-title">Equity Curve</h3>
+            <div class="panel-subtitle">Growth over closed trade history</div>
+            <div style="height:360px;"><canvas id="equityChart"></canvas></div>
+          </div>
+
+          <div class="panel">
+            <h3 class="panel-title">Recent Trades</h3>
+            <div class="panel-subtitle">Latest closed trades</div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Time</th><th>Symbol</th><th>Side</th><th>PnL</th></tr>
+                </thead>
+                <tbody id="analyticsTable"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- REALTIME -->
+      <section id="page-realtime" class="page">
+        <div class="grid-4" style="margin-bottom:18px;">
+          <div class="stat-card"><div class="label">Total Live PnL</div><div id="rtTotalLivePnl" class="value">$0.00</div></div>
+          <div class="stat-card"><div class="label">Open Trades</div><div id="rtOpenTradesCount" class="value">0</div></div>
+          <div class="stat-card"><div class="label">Best Signal</div><div id="rtBestSignal" class="value">--</div></div>
+          <div class="stat-card"><div class="label">Market Status</div><div id="rtMarketStatus" class="value positive">LIVE</div></div>
+        </div>
+
+        <div class="grid-2">
+          <div class="panel">
+            <h3 class="panel-title">Live Open Trades</h3>
+            <div class="panel-subtitle">Realtime paper trade positions</div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Pair</th><th>Side</th><th>Entry</th><th>Current</th><th>PnL</th></tr>
+                </thead>
+                <tbody id="realtimeTrades"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="panel">
+            <h3 class="panel-title">Live Signal Feed</h3>
+            <div class="panel-subtitle">Shared live bus event stream</div>
+            <div id="realtimeFeed" class="feed-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- BACKTESTER -->
+      <section id="page-backtester" class="page">
+        <div id="errorBox" class="error-box"></div>
+        <div id="successBox" class="success-box"></div>
+
+        <div class="panel" style="margin-bottom:18px;">
+          <div class="controls-grid">
+            <div class="control">
+              <label>Symbol</label>
+              <select id="btSymbol">
+                <option value="BTCUSDT">BTCUSDT</option>
+                <option value="ETHUSDT">ETHUSDT</option>
+                <option value="BNBUSDT">BNBUSDT</option>
+                <option value="SOLUSDT">SOLUSDT</option>
+              </select>
+            </div>
+
+            <div class="control">
+              <label>Interval</label>
+              <select id="btInterval">
+                <option value="1m">1m</option>
+                <option value="5m" selected>5m</option>
+                <option value="15m">15m</option>
+                <option value="1h">1h</option>
+                <option value="4h">4h</option>
+              </select>
+            </div>
+
+            <div class="control">
+              <label>Candles</label>
+              <select id="btLimit">
+                <option value="100">100</option>
+                <option value="200" selected>200</option>
+                <option value="300">300</option>
+              </select>
+            </div>
+
+            <div class="control">
+              <label>Strategy</label>
+              <select id="btStrategy">
+                <option value="bot" selected>Unified Live Bot</option>
+                <option value="basic">Basic</option>
+                <option value="smart_money">Smart Money</option>
+                <option value="ema_rsi">EMA + RSI</option>
+              </select>
+            </div>
+
+            <div class="control">
+              <label>Starting Balance</label>
+              <input id="btStartingBalance" type="number" value="1000" min="100" step="100" />
+            </div>
+
+            <div class="control" style="display:flex;align-items:flex-end;">
+              <button id="runBacktestBtn" class="btn primary" style="width:100%;display:flex;align-items:center;justify-content:center;gap:10px;">
+                <span id="runBtnText">Run Backtest</span>
+                <div id="runLoader" class="loader hidden"></div>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid-5" style="margin-bottom:18px;">
+          <div class="stat-card"><div class="label">Net PnL</div><div id="btNetPnl" class="value neutral">$0.00</div></div>
+          <div class="stat-card"><div class="label">Final Balance</div><div id="btFinalBalance" class="value neutral">$0.00</div></div>
+          <div class="stat-card"><div class="label">Total Trades</div><div id="btTotalTrades" class="value">0</div></div>
+          <div class="stat-card"><div class="label">Win Rate</div><div id="btWinRate" class="value">0%</div></div>
+          <div class="stat-card"><div class="label">Best Trade</div><div id="btBestTrade" class="value">$0.00</div></div>
+        </div>
+
+        <div class="grid-2" style="margin-bottom:18px;">
+          <div class="panel">
+            <h3 class="panel-title">Historical Chart View</h3>
+            <div class="panel-subtitle">Backend candle data with rolling overlay context</div>
+            <div class="chart-box-sm">
+              <div id="btChart"></div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+              <div>
+                <h3 class="panel-title" style="margin-bottom:4px;">Signal Feed</h3>
+                <div class="panel-subtitle" style="margin-bottom:0;">Generated during backtest run</div>
+              </div>
+              <div id="btSignalCount" class="panel-subtitle">0 signals</div>
+            </div>
+            <div id="btSignalsContainer" class="feed-list" style="max-height:580px;margin-top:16px;">
+              <div class="feed-item info">
+                <div class="feed-time">Ready</div>
+                <div class="feed-text">No signals yet.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h3 class="panel-title">Backtest Trades</h3>
+          <div class="panel-subtitle">Closed trade results from historical simulation</div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Side</th>
+                  <th>Entry</th>
+                  <th>Exit</th>
+                  <th>SL</th>
+                  <th>TP</th>
+                  <th>Entry Time</th>
+                  <th>Exit Time</th>
+                  <th>PnL</th>
+                  <th>Result</th>
+                </tr>
+              </thead>
+              <tbody id="btTradeTableBody">
+                <tr><td colspan="10" style="color:var(--muted);">No backtest data yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    // ---------------- MODULE LOADER ----------------
+    const AppModules = (() => {
+      const modules = {};
+      return {
+        define(name, factory) {
+          modules[name] = { factory, instance: null };
+        },
+        require(name) {
+          if (!modules[name]) {
+            throw new Error(`Module not found: ${name}`);
+          }
+          if (!modules[name].instance) {
+            modules[name].instance = modules[name].factory();
+          }
+          return modules[name].instance;
+        }
+      };
+    })();
+
+    // ---------------- HELPERS ----------------
+    AppModules.define("helpers", () => {
+      function formatMoney(value) {
+        const num = Number(value || 0);
+        const sign = num >= 0 ? "" : "-";
+        return `${sign}$${Math.abs(num).toFixed(2)}`;
+      }
+
+      function signalBadge(signal) {
+        if (signal === "BUY") return "badge-buy";
+        if (signal === "SELL") return "badge-sell";
+        return "badge-hold";
+      }
+
+      async function fetchJSON(url, options) {
+        const res = await fetch(url, options);
+        const text = await res.text();
+        let data = {};
+        try { data = text ? JSON.parse(text) : {}; } catch (_) {}
+        if (!res.ok) {
+          throw new Error(data.error || `Request failed (${res.status})`);
+        }
+        return data;
+      }
+
+      return {
+        formatMoney,
+        signalBadge,
+        fetchJSON
+      };
+    });
+
+    // ---------------- THEME ----------------
+    AppModules.define("theme", () => {
+      let currentTheme = localStorage.getItem("app_theme") || "dark";
+
+      function applyTheme(theme) {
+        currentTheme = theme;
+        document.documentElement.setAttribute("data-theme", theme);
+        localStorage.setItem("app_theme", theme);
+
+        const btn = document.getElementById("themeToggleBtn");
+        const label = document.getElementById("themeLabel");
+
+        if (btn) {
+          btn.textContent = theme === "dark" ? "☀️ Switch to Light Mode" : "🌙 Switch to Dark Mode";
+        }
+        if (label) {
+          label.textContent = theme === "dark" ? "Dark" : "Light";
+        }
+
+        try {
+          AppModules.require("charts").refreshTheme();
+        } catch (_) {}
+
+        try {
+          AppModules.require("backtester").refreshTheme();
+        } catch (_) {}
+      }
+
+      function toggleTheme() {
+        applyTheme(currentTheme === "dark" ? "light" : "dark");
+      }
+
+      function getChartColors() {
+        const theme = document.documentElement.getAttribute("data-theme") || "dark";
+        if (theme === "light") {
+          return {
+            bg: "#ffffff",
+            text: "#334155",
+            grid: "rgba(15,23,42,0.08)",
+            border: "rgba(15,23,42,0.10)"
+          };
+        }
+        return {
+          bg: "#0c1729",
+          text: "#cbd5e1",
+          grid: "rgba(255,255,255,0.05)",
+          border: "rgba(255,255,255,0.08)"
+        };
+      }
+
+      function init() {
+        applyTheme(currentTheme);
+        document.getElementById("themeToggleBtn").addEventListener("click", toggleTheme);
+      }
+
+      return { init, applyTheme, toggleTheme, getChartColors };
+    });
+
+    // ---------------- SHARED LIVE BUS / WEBSOCKET LOADER ----------------
+    AppModules.define("livebus", () => {
+      const { fetchJSON } = AppModules.require("helpers");
+
+      const listeners = {};
+      let socket = null;
+      let refreshTimer = null;
+      let started = false;
+
+      function emit(event, payload) {
+        (listeners[event] || []).forEach(fn => {
+          try { fn(payload); } catch (e) { console.error(e); }
+        });
+      }
+
+      function on(event, fn) {
+        if (!listeners[event]) listeners[event] = [];
+        listeners[event].push(fn);
+      }
+
+      function setSocketStatus(text) {
+        const el = document.getElementById("sbSocketStatus");
+        if (el) el.textContent = text;
+      }
+
+      function setEngineStatus(text) {
+        const el = document.getElementById("sbEngineStatus");
+        if (el) el.textContent = text;
+      }
+
+      function setLastUpdate(text) {
+        const el = document.getElementById("sbLastUpdate");
+        if (el) el.textContent = text || "--";
+      }
+
+      async function doRefreshCycle() {
+        try {
+          const refresh = await fetchJSON("/refresh-engine");
+          emit("engine:refresh", refresh);
+
+          const signal = await fetchJSON("/signal");
+          emit("dashboard:data", signal);
+          if (signal.last_update) setLastUpdate(signal.last_update);
+
+          const alerts = await fetchJSON("/alerts");
+          emit("alerts:data", alerts);
+
+          const stats = await fetchJSON("/stats");
+          emit("stats:data", stats);
+
+          const history = await fetchJSON("/history");
+          emit("history:data", history);
+
+          const equity = await fetchJSON("/equity");
+          emit("equity:data", equity);
+
+          const liveTrades = await fetchJSON("/live_trades");
+          emit("live_trades:data", liveTrades);
+
+          const signalMap = await fetchJSON("/signals");
+          emit("signal_map:data", signalMap);
+
+          setEngineStatus("Online");
+        } catch (err) {
+          console.error("Refresh cycle failed:", err);
+          setEngineStatus("Degraded");
+          emit("engine:error", err);
+        }
+      }
+
+      function startPolling() {
+        if (refreshTimer) clearInterval(refreshTimer);
+        setSocketStatus("Polling");
+        doRefreshCycle();
+        refreshTimer = setInterval(doRefreshCycle, 15000);
+      }
+
+      function tryWebSocket() {
+        const wsProtocol = location.protocol === "https:" ? "wss" : "ws";
+        const wsUrl = `${wsProtocol}://${location.host}/ws/live`;
+
+        try {
+          socket = new WebSocket(wsUrl);
+          setSocketStatus("Connecting");
+
+          socket.onopen = () => {
+            setSocketStatus("Connected");
+          };
+
+          socket.onmessage = async (event) => {
+            try {
+              const payload = JSON.parse(event.data);
+              emit("socket:message", payload);
+              if (payload.type === "refresh_required") {
+                await doRefreshCycle();
+              }
+            } catch (e) {
+              console.error("WS parse error:", e);
+            }
+          };
+
+          socket.onerror = () => {
+            setSocketStatus("Fallback");
+          };
+
+          socket.onclose = () => {
+            setSocketStatus("Polling");
+            startPolling();
+          };
+
+          setTimeout(() => {
+            if (socket && socket.readyState !== WebSocket.OPEN) {
+              try { socket.close(); } catch (_) {}
+              startPolling();
+            }
+          }, 2500);
+
+        } catch (err) {
+          console.error("WebSocket unavailable:", err);
+          startPolling();
+        }
+      }
+
+      function start() {
+        if (started) return;
+        started = true;
+        tryWebSocket();
+      }
+
+      return {
+        on,
+        start,
+        refreshNow: doRefreshCycle
+      };
+    });
+
+    // ---------------- NAVIGATION ----------------
+    AppModules.define("nav", () => {
+      const pages = ["dashboard", "charts", "analytics", "realtime", "backtester"];
+
+      function showPage(page) {
+        pages.forEach(p => {
+          document.getElementById(`page-${p}`).classList.toggle("active", p === page);
+        });
+
+        document.querySelectorAll(".nav-btn").forEach(btn => {
+          btn.classList.toggle("active", btn.dataset.page === page);
+        });
+
+        history.replaceState(null, "", page === "dashboard" ? "/" : `/${page}`);
+      }
+
+      function init() {
+        document.querySelectorAll(".nav-btn").forEach(btn => {
+          btn.addEventListener("click", () => showPage(btn.dataset.page));
+        });
+
+        document.getElementById("goBacktesterBtn").addEventListener("click", () => showPage("backtester"));
+
+        const path = location.pathname.replace("/", "") || "dashboard";
+        showPage(pages.includes(path) ? path : "dashboard");
+      }
+
+      return { init, showPage };
+    });
+
+    // ---------------- DASHBOARD ----------------
+    AppModules.define("dashboard", () => {
+      const { formatMoney, signalBadge } = AppModules.require("helpers");
+
+      function renderSignals(signals) {
+        const box = document.getElementById("dashboardSignals");
+        if (!signals || !signals.length) {
+          box.innerHTML = `<div class="feed-item info"><div class="feed-time">Idle</div><div class="feed-text">No signals available.</div></div>`;
+          return;
+        }
+
+        box.innerHTML = signals.map(s => `
+          <div class="signal-card">
+            <div class="signal-top">
+              <div class="symbol">${s.symbol}</div>
+              <span class="badge ${signalBadge(s.signal)}">${s.signal}</span>
+            </div>
+            <div class="signal-info">
+              <div><span>Price:</span> <b>${s.live_price}</b></div>
+              <div><span>Bias:</span> <b>${s.bias}</b></div>
+              <div><span>Structure:</span> <b>${s.structure}</b></div>
+              <div><span>Regime:</span> <b>${s.regime}</b></div>
+              <div><span>Confidence:</span> <b>${Number(s.confidence || 0).toFixed(0)}%</b></div>
+            </div>
+          </div>
+        `).join("");
+      }
+
+      function renderAlerts(alerts) {
+        const box = document.getElementById("dashboardAlerts");
+        if (!alerts || !alerts.length) {
+          box.innerHTML = `<div class="feed-item info"><div class="feed-time">Empty</div><div class="feed-text">No alerts yet.</div></div>`;
+          return;
+        }
+
+        box.innerHTML = alerts.map(a => `
+          <div class="feed-item ${a.type || "info"}">
+            <div class="feed-time">${a.time || ""}</div>
+            <div class="feed-text">${a.message || ""}</div>
+          </div>
+        `).join("");
+      }
+
+      function renderSignalPayload(data) {
+        document.getElementById("dashBalance").textContent = formatMoney(data.balance || 0);
+        document.getElementById("topBalance").textContent = formatMoney(data.balance || 0);
+
+        const bestConfidence = data.all_signals?.length
+          ? Math.max(...data.all_signals.map(s => Number(s.confidence || 0)))
+          : 0;
+
+        document.getElementById("dashBestSignal").textContent = `${bestConfidence.toFixed(0)}%`;
+        document.getElementById("topBestSignal").textContent = `${bestConfidence.toFixed(0)}%`;
+
+        if (data.last_update) {
+          document.getElementById("dashboardLastUpdate").textContent = `Last engine refresh: ${data.last_update}`;
+          document.getElementById("sbLastUpdate").textContent = data.last_update;
+        }
+
+        renderSignals(data.all_signals || []);
+      }
+
+      function renderStats(stats) {
+        document.getElementById("dashWinRate").textContent = `${Number(stats.win_rate || 0).toFixed(1)}%`;
+        document.getElementById("dashTrades").textContent = stats.total_trades || 0;
+        document.getElementById("dashWins").textContent = stats.wins || 0;
+        document.getElementById("dashLosses").textContent = stats.losses || 0;
+        document.getElementById("topWinRate").textContent = `${Number(stats.win_rate || 0).toFixed(1)}%`;
+      }
+
+      return {
+        renderSignalPayload,
+        renderStats,
+        renderAlerts
+      };
+    });
+
+    // ---------------- CHARTS ----------------
+    AppModules.define("charts", () => {
+      const { fetchJSON, signalBadge } = AppModules.require("helpers");
+      const theme = AppModules.require("theme");
+
+      let mainChart = null;
+      let mainCandleSeries = null;
+      let mainLineSeries = [];
+
+      function create() {
+        const container = document.getElementById("mainChart");
+        container.innerHTML = "";
+
+        const colors = theme.getChartColors();
+
+        mainChart = LightweightCharts.createChart(container, {
+          width: container.clientWidth,
+          height: 560,
+          layout: {
+            background: { color: colors.bg },
+            textColor: colors.text
+          },
+          grid: {
+            vertLines: { color: colors.grid },
+            horzLines: { color: colors.grid }
+          },
+          timeScale: {
+            borderColor: colors.border,
+            timeVisible: true,
+            secondsVisible: false
+          },
+          rightPriceScale: {
+            borderColor: colors.border
+          }
+        });
+
+        mainCandleSeries = mainChart.addCandlestickSeries({
+          upColor: "#22c55e",
+          downColor: "#ef4444",
+          borderVisible: false,
+          wickUpColor: "#22c55e",
+          wickDownColor: "#ef4444"
+        });
+
+        window.addEventListener("resize", () => {
+          if (mainChart) mainChart.applyOptions({ width: container.clientWidth, height: 560 });
+        });
+      }
+
+      function refreshTheme() {
+        if (!mainChart) return;
+        const colors = theme.getChartColors();
+        mainChart.applyOptions({
+          layout: {
+            background: { color: colors.bg },
+            textColor: colors.text
+          },
+          grid: {
+            vertLines: { color: colors.grid },
+            horzLines: { color: colors.grid }
+          },
+          timeScale: { borderColor: colors.border },
+          rightPriceScale: { borderColor: colors.border }
+        });
+      }
+
+      function clearLines() {
+        mainLineSeries.forEach(s => {
+          try { mainChart.removeSeries(s); } catch (_) {}
+        });
+        mainLineSeries = [];
+      }
+
+      function addLine(price, color) {
+        const firstTime = window._mainCandles?.[0]?.time;
+        const lastTime = window._mainCandles?.[window._mainCandles.length - 1]?.time;
+        if (firstTime == null || lastTime == null) return;
+
+        const series = mainChart.addLineSeries({
+          color,
+          lineWidth: 2,
+          lastValueVisible: true,
+          priceLineVisible: false,
+          crosshairMarkerVisible: false
+        });
+
+        series.setData([
+          { time: firstTime, value: price },
+          { time: lastTime, value: price }
+        ]);
+
+        mainLineSeries.push(series);
+      }
+
+      async function load() {
+        const symbol = document.getElementById("chartSymbol").value;
+        const interval = document.getElementById("chartInterval").value;
+
+        const candleRes = await fetchJSON(`/api/chart-candles?symbol=${symbol}&interval=${interval}&limit=120`);
+        const overlayRes = await fetchJSON(`/api/chart-overlays?symbol=${symbol}&interval=${interval}&limit=120`);
+
+        const candles = candleRes.data || [];
+        const overlays = overlayRes.data || {};
+        window._mainCandles = candles;
+
+        mainCandleSeries.setData(candles);
+
+        if (typeof mainCandleSeries.setMarkers === "function") {
+          mainCandleSeries.setMarkers(overlays.markers || []);
+        }
+
+        clearLines();
+
+        (overlays.trade_levels || []).forEach(level => {
+          addLine(level.entry, level.side === "BUY" ? "#22c55e" : "#ef4444");
+          addLine(level.sl, "#f59e0b");
+          addLine(level.tp, "#3b82f6");
+        });
+
+        const levelsBox = document.getElementById("chartLevels");
+        if (!overlays.trade_levels || !overlays.trade_levels.length) {
+          levelsBox.innerHTML = `<div class="feed-item info"><div class="feed-time">No Data</div><div class="feed-text">No recent levels.</div></div>`;
+        } else {
+          levelsBox.innerHTML = overlays.trade_levels.slice().reverse().map(level => `
+            <div class="signal-card" style="margin-bottom:12px;">
+              <div class="signal-top">
+                <div class="symbol" style="font-size:14px;">Signal</div>
+                <span class="badge ${signalBadge(level.side)}">${level.side}</span>
+              </div>
+              <div class="signal-info">
+                <div><span>Entry:</span> <b>${level.entry}</b></div>
+                <div><span>SL:</span> <b>${level.sl}</b></div>
+                <div><span>TP:</span> <b>${level.tp}</b></div>
+              </div>
+            </div>
+          `).join("");
+        }
+
+        mainChart.timeScale().fitContent();
+      }
+
+      return { create, load, refreshTheme };
+    });
+
+    // ---------------- ANALYTICS ----------------
+    AppModules.define("analytics", () => {
+      const { formatMoney } = AppModules.require("helpers");
+      let equityChart = null;
+
+      function renderStats(stats) {
+        document.getElementById("anTotalTrades").textContent = stats.total_trades || 0;
+        document.getElementById("anWinRate").textContent = `${Number(stats.win_rate || 0).toFixed(1)}%`;
+        document.getElementById("anWinsLosses").textContent = `${stats.wins || 0} / ${stats.losses || 0}`;
+        document.getElementById("anNetPnl").textContent = formatMoney(stats.net_pnl || 0);
+        document.getElementById("anNetPnl").className = `value ${(stats.net_pnl || 0) >= 0 ? "positive" : "negative"}`;
+      }
+
+      function renderHistory(history) {
+        const tbody = document.getElementById("analyticsTable");
+        tbody.innerHTML = (history || []).slice(0, 20).map(t => `
+          <tr>
+            <td>${t.time || "--"}</td>
+            <td>${t.symbol || "--"}</td>
+            <td>${t.side || "--"}</td>
+            <td class="${Number(t.pnl || 0) >= 0 ? "positive" : "negative"}">${formatMoney(t.pnl || 0)}</td>
+          </tr>
+        `).join("");
+      }
+
+      function renderEquity(equity) {
+        const ctx = document.getElementById("equityChart").getContext("2d");
+        if (equityChart) equityChart.destroy();
+
+        const isLight = document.documentElement.getAttribute("data-theme") === "light";
+        const gridColor = isLight ? "rgba(15,23,42,0.08)" : "rgba(255,255,255,0.05)";
+        const labelColor = isLight ? "#475569" : "#94a3b8";
+        const legendColor = isLight ? "#334155" : "#e5edf7";
+
+        equityChart = new Chart(ctx, {
+          type: "line",
+          data: {
+            labels: (equity || []).map(e => e.time),
+            datasets: [{
+              label: "Equity",
+              data: (equity || []).map(e => e.equity),
+              borderColor: "#3b82f6",
+              backgroundColor: "rgba(59,130,246,0.12)",
+              fill: true,
+              tension: 0.3,
+              pointRadius: 2
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { labels: { color: legendColor } }
+            },
+            scales: {
+              x: { ticks: { color: labelColor }, grid: { color: gridColor } },
+              y: { ticks: { color: labelColor }, grid: { color: gridColor } }
+            }
+          }
+        });
+      }
+
+      return { renderStats, renderHistory, renderEquity };
+    });
+
+    // ---------------- REALTIME ----------------
+    AppModules.define("realtime", () => {
+      const { formatMoney } = AppModules.require("helpers");
+
+      function renderTrades(openTrades) {
+        const totalPnl = (openTrades || []).reduce((sum, t) => sum + Number(t.pnl || 0), 0);
+
+        document.getElementById("rtTotalLivePnl").textContent = formatMoney(totalPnl);
+        document.getElementById("rtTotalLivePnl").className = `value ${totalPnl >= 0 ? "positive" : "negative"}`;
+        document.getElementById("rtOpenTradesCount").textContent = (openTrades || []).length;
+        document.getElementById("topOpenTrades").textContent = (openTrades || []).length;
+
+        const tbody = document.getElementById("realtimeTrades");
+        if (!openTrades.length) {
+          tbody.innerHTML = `<tr><td colspan="5" style="color:var(--muted);">No open trades yet</td></tr>`;
+          return;
+        }
+
+        tbody.innerHTML = openTrades.map(t => `
+          <tr>
+            <td>${t.symbol}</td>
+            <td class="${t.side === "BUY" ? "positive" : "negative"}">${t.side}</td>
+            <td>${Number(t.entry_price).toFixed(2)}</td>
+            <td>${Number(t.current_price).toFixed(2)}</td>
+            <td class="${Number(t.pnl) >= 0 ? "positive" : "negative"}">${formatMoney(t.pnl)}</td>
+          </tr>
+        `).join("");
+      }
+
+      function renderFeed(alerts) {
+        const box = document.getElementById("realtimeFeed");
+        if (!alerts || !alerts.length) {
+          box.innerHTML = `<div class="feed-item info"><div class="feed-time">Waiting</div><div class="feed-text">No live events yet.</div></div>`;
+          return;
+        }
+
+        box.innerHTML = alerts.map(a => `
+          <div class="feed-item ${a.type || "info"}">
+            <div class="feed-time">${a.time || ""}</div>
+            <div class="feed-text">${a.message || ""}</div>
+          </div>
+        `).join("");
+      }
+
+      function renderSignalMap(signalMap) {
+        const signalEntries = Object.entries(signalMap || {}).map(([symbol, val]) => ({
+          symbol,
+          signal: val.signal,
+          confidence: Number(val.confidence || 0)
+        }));
+
+        const bestSignal = signalEntries.length
+          ? [...signalEntries].sort((a, b) => b.confidence - a.confidence)[0]
+          : null;
+
+        document.getElementById("rtBestSignal").textContent =
+          bestSignal ? `${bestSignal.symbol} ${bestSignal.signal}` : "--";
+      }
+
+      return { renderTrades, renderFeed, renderSignalMap };
+    });
+
+    // ---------------- BACKTESTER ----------------
+    AppModules.define("backtester", () => {
+      const { fetchJSON, formatMoney, signalBadge } = AppModules.require("helpers");
+      const theme = AppModules.require("theme");
+
+      let btChart = null;
+      let btCandleSeries = null;
+      let btLineSeries = [];
+
+      function create() {
+        const container = document.getElementById("btChart");
+        container.innerHTML = "";
+
+        const colors = theme.getChartColors();
+
+        btChart = LightweightCharts.createChart(container, {
+          width: container.clientWidth,
+          height: 580,
+          layout: {
+            background: { color: colors.bg },
+            textColor: colors.text
+          },
+          grid: {
+            vertLines: { color: colors.grid },
+            horzLines: { color: colors.grid }
+          },
+          timeScale: {
+            borderColor: colors.border,
+            timeVisible: true,
+            secondsVisible: false
+          },
+          rightPriceScale: {
+            borderColor: colors.border
+          }
+        });
+
+        btCandleSeries = btChart.addCandlestickSeries({
+          upColor: "#22c55e",
+          downColor: "#ef4444",
+          borderVisible: false,
+          wickUpColor: "#22c55e",
+          wickDownColor: "#ef4444"
+        });
+
+        window.addEventListener("resize", () => {
+          if (btChart) btChart.applyOptions({ width: container.clientWidth, height: 580 });
+        });
+      }
+
+      function refreshTheme() {
+        if (!btChart) return;
+        const colors = theme.getChartColors();
+        btChart.applyOptions({
+          layout: {
+            background: { color: colors.bg },
+            textColor: colors.text
+          },
+          grid: {
+            vertLines: { color: colors.grid },
+            horzLines: { color: colors.grid }
+          },
+          timeScale: { borderColor: colors.border },
+          rightPriceScale: { borderColor: colors.border }
+        });
+      }
+
+      function clearLines() {
+        btLineSeries.forEach(s => {
+          try { btChart.removeSeries(s); } catch (_) {}
+        });
+        btLineSeries = [];
+      }
+
+      function addLine(price, color) {
+        const firstTime = window._btCandles?.[0]?.time;
+        const lastTime = window._btCandles?.[window._btCandles.length - 1]?.time;
+        if (firstTime == null || lastTime == null) return;
+
+        const series = btChart.addLineSeries({
+          color,
+          lineWidth: 2,
+          lastValueVisible: true,
+          priceLineVisible: false,
+          crosshairMarkerVisible: false
+        });
+
+        series.setData([
+          { time: firstTime, value: price },
+          { time: lastTime, value: price }
+        ]);
+
+        btLineSeries.push(series);
+      }
+
+      function showError(message) {
+        const errorBox = document.getElementById("errorBox");
+        const successBox = document.getElementById("successBox");
+        successBox.classList.remove("show");
+        successBox.textContent = "";
+        errorBox.textContent = message;
+        errorBox.classList.add("show");
+      }
+
+      function clearError() {
+        const errorBox = document.getElementById("errorBox");
+        errorBox.classList.remove("show");
+        errorBox.textContent = "";
+      }
+
+      function showSuccess(message) {
+        const successBox = document.getElementById("successBox");
+        successBox.textContent = message;
+        successBox.classList.add("show");
+        setTimeout(() => {
+          successBox.classList.remove("show");
+          successBox.textContent = "";
+        }, 3000);
+      }
+
+      function updateSummary(summary) {
+        document.getElementById("btNetPnl").textContent = formatMoney(summary.net_pnl);
+        document.getElementById("btFinalBalance").textContent = formatMoney(summary.final_balance);
+        document.getElementById("btBestTrade").textContent = formatMoney(summary.best_trade);
+        document.getElementById("btTotalTrades").textContent = summary.total_trades || 0;
+        document.getElementById("btWinRate").textContent = `${Number(summary.win_rate || 0).toFixed(2)}%`;
+
+        document.getElementById("btNetPnl").className = `value ${Number(summary.net_pnl || 0) >= 0 ? "positive" : "negative"}`;
+        document.getElementById("btFinalBalance").className = `value ${(Number(summary.final_balance || 0) - Number(summary.starting_balance || 0)) >= 0 ? "positive" : "negative"}`;
+        document.getElementById("btBestTrade").className = `value ${Number(summary.best_trade || 0) >= 0 ? "positive" : "negative"}`;
+      }
+
+      function renderSignals(signals) {
+        const container = document.getElementById("btSignalsContainer");
+        document.getElementById("btSignalCount").textContent = `${signals.length} signals`;
+
+        if (!signals.length) {
+          container.innerHTML = `<div class="feed-item info"><div class="feed-time">Ready</div><div class="feed-text">No signals generated.</div></div>`;
+          return;
+        }
+
+        container.innerHTML = signals.map((signal, i) => `
+          <div class="feed-item ${signal.type === "BUY" ? "buy" : "sell"}">
+            <div class="feed-time">#${i + 1} • ${signal.time}</div>
+            <div class="feed-text">
+              <div><strong>${signal.type}</strong> @ ${Number(signal.price).toFixed(2)}</div>
+              <div style="margin-top:6px;font-size:12px;color:var(--muted);">
+                SL: ${Number(signal.stop_loss).toFixed(2)} |
+                TP: ${Number(signal.take_profit).toFixed(2)} |
+                Confidence: ${Number(signal.confidence || 0).toFixed(0)}%
+              </div>
+            </div>
+          </div>
+        `).join("");
+      }
+
+      function renderTrades(trades) {
+        const body = document.getElementById("btTradeTableBody");
+
+        if (!trades.length) {
+          body.innerHTML = `<tr><td colspan="10" style="color:var(--muted);">No trades found for this backtest.</td></tr>`;
+          return;
+        }
+
+        body.innerHTML = trades.map((trade, index) => {
+          const pnl = Number(trade.pnl || 0);
+          return `
+            <tr>
+              <td>${index + 1}</td>
+              <td><span class="badge ${signalBadge(trade.side)}">${trade.side}</span></td>
+              <td>${Number(trade.entry_price).toFixed(2)}</td>
+              <td>${Number(trade.exit_price).toFixed(2)}</td>
+              <td>${Number(trade.stop_loss).toFixed(2)}</td>
+              <td>${Number(trade.take_profit).toFixed(2)}</td>
+              <td>${trade.entry_time}</td>
+              <td>${trade.exit_time}</td>
+              <td class="${pnl >= 0 ? "positive" : "negative"}">${formatMoney(pnl)}</td>
+              <td><span class="badge ${pnl >= 0 ? "badge-buy" : "badge-sell"}">${pnl >= 0 ? "WIN" : "LOSS"}</span></td>
+            </tr>
+          `;
+        }).join("");
+      }
+
+      function resetOutputs() {
+        updateSummary({
+          net_pnl: 0,
+          final_balance: 0,
+          best_trade: 0,
+          starting_balance: 0,
+          total_trades: 0,
+          win_rate: 0
+        });
+        renderSignals([]);
+        renderTrades([]);
+        clearLines();
+        if (btCandleSeries) btCandleSeries.setData([]);
+      }
+
+      async function loadChartData() {
+        const symbol = document.getElementById("btSymbol").value;
+        const interval = document.getElementById("btInterval").value;
+
+        const candleRes = await fetchJSON(`/api/chart-candles?symbol=${symbol}&interval=${interval}&limit=120`);
+        const overlayRes = await fetchJSON(`/api/chart-overlays?symbol=${symbol}&interval=${interval}&limit=120`);
+
+        const candles = candleRes.data || [];
+        const overlays = overlayRes.data || {};
+        window._btCandles = candles;
+
+        btCandleSeries.setData(candles);
+
+        if (typeof btCandleSeries.setMarkers === "function") {
+          btCandleSeries.setMarkers(overlays.markers || []);
+        }
+
+        clearLines();
+        (overlays.trade_levels || []).forEach(level => {
+          addLine(level.entry, level.side === "BUY" ? "#22c55e" : "#ef4444");
+          addLine(level.sl, "#f59e0b");
+          addLine(level.tp, "#3b82f6");
+        });
+
+        btChart.timeScale().fitContent();
+      }
+
+      async function run() {
+        const symbol = document.getElementById("btSymbol").value;
+        const interval = document.getElementById("btInterval").value;
+        const limit = Number(document.getElementById("btLimit").value);
+        const strategy = document.getElementById("btStrategy").value;
+        const startingBalance = Number(document.getElementById("btStartingBalance").value);
+
+        const btn = document.getElementById("runBacktestBtn");
+        const btnText = document.getElementById("runBtnText");
+        const loader = document.getElementById("runLoader");
+
+        clearError();
+
+        if (!startingBalance || startingBalance <= 0) {
+          showError("Please enter a valid starting balance.");
+          return;
+        }
+
+        btn.disabled = true;
+        btnText.textContent = "Running...";
+        loader.classList.remove("hidden");
+
+        resetOutputs();
+
+        try {
+          await loadChartData();
+
+          const data = await fetchJSON("/api/backtest", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              symbol,
+              interval,
+              limit,
+              strategy,
+              starting_balance: startingBalance
+            })
+          });
+
+          updateSummary(data.summary || {});
+          renderSignals(Array.isArray(data.signals) ? data.signals : []);
+          renderTrades(Array.isArray(data.trades) ? data.trades : []);
+          showSuccess(strategy === "bot" ? "True bot backtest completed." : "Backtest completed.");
+        } catch (err) {
+          showError(err.message || "Backtest failed.");
+        } finally {
+          btn.disabled = false;
+          btnText.textContent = "Run Backtest";
+          loader.classList.add("hidden");
+        }
+      }
+
+      return { create, run, refreshTheme };
+    });
+
+    // ---------------- APP INIT ----------------
+    (function () {
+      const nav = AppModules.require("nav");
+      const theme = AppModules.require("theme");
+      const livebus = AppModules.require("livebus");
+      const dashboard = AppModules.require("dashboard");
+      const charts = AppModules.require("charts");
+      const analytics = AppModules.require("analytics");
+      const realtime = AppModules.require("realtime");
+      const backtester = AppModules.require("backtester");
+
+      document.addEventListener("DOMContentLoaded", async () => {
+        theme.init();
+        nav.init();
+        charts.create();
+        backtester.create();
+
+        document.getElementById("chartRefreshBtn").addEventListener("click", () => charts.load().catch(console.error));
+        document.getElementById("runBacktestBtn").addEventListener("click", () => backtester.run());
+        document.getElementById("globalRefreshBtn").addEventListener("click", async () => {
+          try {
+            await livebus.refreshNow();
+          } catch (e) {
+            console.error(e);
+          }
+        });
+
+        livebus.on("dashboard:data", (data) => {
+          dashboard.renderSignalPayload(data);
+        });
+
+        livebus.on("alerts:data", (alerts) => {
+          dashboard.renderAlerts(alerts || []);
+          realtime.renderFeed(alerts || []);
+        });
+
+        livebus.on("stats:data", (stats) => {
+          dashboard.renderStats(stats);
+          analytics.renderStats(stats);
+        });
+
+        livebus.on("history:data", (history) => {
+          analytics.renderHistory(history);
+        });
+
+        livebus.on("equity:data", (equity) => {
+          analytics.renderEquity(equity);
+        });
+
+        livebus.on("live_trades:data", (openTrades) => {
+          realtime.renderTrades(openTrades || []);
+        });
+
+        livebus.on("signal_map:data", (signalMap) => {
+          realtime.renderSignalMap(signalMap || {});
+        });
+
+        livebus.on("engine:error", () => {
+          document.getElementById("sbEngineStatus").textContent = "Error";
+        });
+
+        await charts.load().catch(console.error);
+        livebus.start();
+      });
+    })();
+  </script>
+</body>
+</html>
