@@ -11,6 +11,7 @@ import pandas as pd
 import requests
 import uuid
 import sqlite3
+import os
 from datetime import datetime, timedelta, timezone
 
 app = Flask(__name__, template_folder=".")
@@ -211,6 +212,37 @@ def get_balance():
     total_pnl = c.fetchone()[0] or 0
     conn.close()
     return bot_config["starting_balance"] + total_pnl
+
+
+def get_trade_history(limit=100):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("""
+        SELECT symbol, type, entry, exit, pnl, status, time
+        FROM trades
+        WHERE status='CLOSED'
+        ORDER BY time DESC
+        LIMIT ?
+    """, (limit,))
+    rows = c.fetchall()
+    conn.close()
+
+    return [
+        {
+            "symbol": row[0],
+            "side": row[1],
+            "type": row[1],
+            "entry_price": row[2],
+            "exit_price": row[3],
+            "entry": row[2],
+            "exit": row[3],
+            "pnl": row[4],
+            "status": row[5],
+            "time": row[6],
+            "closed_at": row[6]
+        }
+        for row in rows
+    ]
 
 
 # ---------------- MARKET DATA ----------------
@@ -750,9 +782,15 @@ def get_symbol_summary(symbol, strategy="bot", interval="1m"):
         interval=interval
     )
 
+    prev_close = float(df.iloc[-2]["close"]) if len(df) > 1 else float(df.iloc[-1]["close"])
+    last_close = float(df.iloc[-1]["close"])
+    change_pct = ((last_close - prev_close) / prev_close * 100) if prev_close else 0
+
     return {
         "symbol": symbol,
-        "price": round(float(df.iloc[-1]["close"]), 2),
+        "price": round(last_close, 2),
+        "live_price": round(last_close, 2),
+        "change_pct": round(change_pct, 4),
         "signal": evaluation["signal"],
         "bias": evaluation["bias"],
         "structure": evaluation["structure"],
@@ -776,6 +814,7 @@ def get_engine_snapshot():
     return {
         "symbol": "BTCUSDT",
         "price": 0,
+        "live_price": 0,
         "signal": "HOLD",
         "bias": "Neutral",
         "structure": "Range / Mixed",
@@ -1343,6 +1382,117 @@ def run_backtest_engine(candles, signals, starting_balance=1000, fee_percent=0.0
 
 
 # ---------------- API ROUTES ----------------
+@app.route("/refresh-engine")
+def refresh_engine():
+    all_signals = []
+
+    for symbol in bot_config["symbols"]:
+        summary = get_symbol_summary(symbol, strategy="bot", interval="1m")
+        if summary:
+            all_signals.append(summary)
+
+            df = fetch_binance(symbol, interval="1m", limit=200)
+            if df is not None:
+                price = float(df.iloc[-1]["close"])
+                update_trades(symbol, price)
+
+    return jsonify({
+        "ok": True,
+        "balance": round(get_balance(), 2),
+        "all_signals": all_signals,
+        "open_trades": live_trades().get_json(),
+        "last_update": now_str()
+    })
+
+
+@app.route("/signal")
+def signal_dashboard():
+    all_signals = []
+
+    for symbol in bot_config["symbols"]:
+        summary = get_symbol_summary(symbol, strategy="bot", interval="1m")
+        if summary:
+            all_signals.append(summary)
+
+    return jsonify({
+        "balance": round(get_balance(), 2),
+        "history": get_trade_history(limit=50),
+        "all_signals": all_signals,
+        "last_update": now_str()
+    })
+
+
+@app.route("/signals")
+def signals_map():
+    signal_data = {}
+
+    for symbol in bot_config["symbols"]:
+        summary = get_symbol_summary(symbol, strategy="bot", interval="1m")
+        if summary:
+            signal_data[symbol] = summary
+
+    return jsonify(signal_data)
+
+
+@app.route("/alerts")
+def alerts():
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT message, time FROM alerts ORDER BY time DESC LIMIT 20")
+    rows = c.fetchall()
+    conn.close()
+
+    return jsonify([
+        {
+            "message": row[0],
+            "time": row[1],
+            "type": "info"
+        }
+        for row in rows
+    ])
+
+
+@app.route("/history")
+def history():
+    return jsonify(get_trade_history(limit=100))
+
+
+@app.route("/stats")
+def stats():
+    history_rows = get_trade_history(limit=1000)
+
+    total = len(history_rows)
+    wins = len([t for t in history_rows if float(t.get("pnl") or 0) > 0])
+    losses = len([t for t in history_rows if float(t.get("pnl") or 0) < 0])
+    net_pnl = sum(float(t.get("pnl") or 0) for t in history_rows)
+    win_rate = (wins / total * 100) if total else 0
+
+    return jsonify({
+        "total_trades": total,
+        "wins": wins,
+        "losses": losses,
+        "win_rate": round(win_rate, 2),
+        "net_pnl": round(net_pnl, 2)
+    })
+
+
+@app.route("/equity")
+def equity():
+    history_rows = list(reversed(get_trade_history(limit=1000)))
+
+    balance = bot_config["starting_balance"]
+    points = [{"time": "Start", "equity": round(balance, 2)}]
+
+    for trade in history_rows:
+        balance += float(trade.get("pnl") or 0)
+        points.append({
+            "time": trade.get("closed_at") or trade.get("time"),
+            "equity": round(balance, 2)
+        })
+
+    return jsonify(points)
+
+
 @app.route("/live_trades")
 def live_trades():
     results = []
@@ -1412,6 +1562,7 @@ def chart_status():
         return jsonify({
             "symbol": symbol,
             "price": 0,
+            "live_price": 0,
             "signal": "HOLD",
             "bias": "Neutral",
             "structure": "Range / Mixed",
@@ -1527,31 +1678,36 @@ def api_backtest():
 
 
 # ---------------- PAGE ROUTES ----------------
+def render_main_page():
+    return render_template("preview.html")
+
+
 @app.route("/")
 def home():
-    return render_template("preview.html")
+    return render_main_page()
 
 
 @app.route("/charts")
 def charts():
-    return render_template("preview.html")
+    return render_main_page()
 
 
 @app.route("/analytics")
 def analytics():
-    return render_template("preview.html")
+    return render_main_page()
 
 
 @app.route("/realtime")
 def realtime():
-    return render_template("preview.html")
+    return render_main_page()
 
 
 @app.route("/backtester")
 def backtester():
-    return render_template("preview.html")
+    return render_main_page()
 
 
 # ---------------- RUN ----------------
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000, debug=True)
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port, debug=True)
