@@ -2175,3 +2175,24 @@ async function loadMainChart() {
   </script>
 </body>
 </html>
+#charts page fix
+<script>
+window.addEventListener("load", async () => {
+    const container = document.getElementById("mainChart");
+    if (!container) return;
+
+    const chart = LightweightCharts.createChart(container, {
+        width: container.clientWidth,
+        height: 400
+    });
+
+    const candleSeries = chart.addCandlestickSeries();
+
+    const res = await fetch("/api/chart-candles");
+    const json = await res.json();
+
+    if (json.ok) {
+        candleSeries.setData(json.data);
+    }
+});
+</script>
