@@ -1469,13 +1469,59 @@ def api_backtest():
         strategy = str(data.get("strategy", "bot")).lower()
         starting_balance = float(data.get("starting_balance", 1000))
 
+        start_date = data.get("start_date")
+        end_date = data.get("end_date")
+
         if limit < 50:
             limit = 50
         if limit > 1000:
             limit = 1000
 
         candles = fetch_market_raw(symbol=symbol, interval=interval, limit=limit)
-        signals = generate_backtest_signals(candles, symbol=symbol, interval=interval, strategy=strategy)
+
+        # FILTER CANDLES BY DATE RANGE
+        if start_date or end_date:
+            filtered = []
+
+            start_dt = None
+            end_dt = None
+
+            if start_date:
+                start_dt = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+
+            if end_date:
+                end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(
+                    hour=23,
+                    minute=59,
+                    second=59,
+                    tzinfo=timezone.utc
+                )
+
+            for candle in candles:
+                candle_dt = datetime.fromtimestamp(int(candle[0]) / 1000, tz=timezone.utc)
+
+                if start_dt and candle_dt < start_dt:
+                    continue
+
+                if end_dt and candle_dt > end_dt:
+                    continue
+
+                filtered.append(candle)
+
+            candles = filtered
+
+        if not candles or len(candles) < 50:
+            return jsonify({
+                "error": "Not enough candle data found for that date range. Try a wider range or more candles."
+            }), 400
+
+        signals = generate_backtest_signals(
+            candles,
+            symbol=symbol,
+            interval=interval,
+            strategy=strategy
+        )
+
         summary, trades = run_backtest_engine(
             candles,
             signals,
@@ -1485,7 +1531,11 @@ def api_backtest():
         return jsonify({
             "summary": summary,
             "signals": signals,
-            "trades": trades
+            "trades": trades,
+            "date_range": {
+                "start_date": start_date,
+                "end_date": end_date
+            }
         })
 
     except Exception as e:
