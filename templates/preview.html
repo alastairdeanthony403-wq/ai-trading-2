@@ -68,7 +68,6 @@
         radial-gradient(circle at top right, var(--hero-grad-2), transparent 22%),
         linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 100%);
       color: var(--text);
-      transition: background 0.25s ease, color 0.25s ease;
     }
 
     .app-shell {
@@ -87,13 +86,9 @@
       overflow-y: auto;
       overflow-x: hidden;
       backdrop-filter: blur(12px);
-      transition: background 0.25s ease, border-color 0.25s ease;
     }
 
-    .sidebar::-webkit-scrollbar {
-      width: 9px;
-    }
-
+    .sidebar::-webkit-scrollbar { width: 9px; }
     .sidebar::-webkit-scrollbar-thumb {
       background: rgba(148, 163, 184, 0.35);
       border-radius: 999px;
@@ -161,10 +156,6 @@
       color: var(--text);
     }
 
-    html[data-theme="light"] .nav-btn:hover {
-      background: rgba(15,23,42,0.03);
-    }
-
     .nav-btn.active {
       background: linear-gradient(135deg, rgba(37,99,235,0.28), rgba(59,130,246,0.18));
       border-color: rgba(59,130,246,0.28);
@@ -177,7 +168,6 @@
       border: 1px solid var(--border);
       border-radius: 16px;
       background: rgba(255,255,255,0.02);
-      transition: background 0.25s ease, border-color 0.25s ease;
     }
 
     html[data-theme="light"] .sidebar-meta {
@@ -201,13 +191,7 @@
       font-size: 13px;
     }
 
-    html[data-theme="light"] .meta-row {
-      border-bottom: 1px solid rgba(15,23,42,0.06);
-    }
-
-    .meta-row:last-child {
-      border-bottom: none;
-    }
+    .meta-row:last-child { border-bottom: none; }
 
     .main {
       padding: 20px;
@@ -230,7 +214,6 @@
       border-radius: var(--radius);
       box-shadow: var(--shadow);
       backdrop-filter: blur(10px);
-      transition: background 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
     }
 
     .hero-card {
@@ -277,17 +260,9 @@
       justify-content: center;
     }
 
-    html[data-theme="light"] .btn {
-      background: rgba(15,23,42,0.03);
-    }
-
     .btn:hover {
       transform: translateY(-1px);
       background: rgba(255,255,255,0.05);
-    }
-
-    html[data-theme="light"] .btn:hover {
-      background: rgba(15,23,42,0.06);
     }
 
     .btn.primary {
@@ -308,12 +283,6 @@
       background: rgba(255,255,255,0.03);
       border-radius: 16px;
       padding: 14px;
-      transition: background 0.25s ease, border-color 0.25s ease;
-    }
-
-    html[data-theme="light"] .mini-top-stat {
-      background: rgba(15,23,42,0.03);
-      border: 1px solid rgba(15,23,42,0.06);
     }
 
     .mini-top-stat .label {
@@ -352,13 +321,8 @@
       letter-spacing: -0.5px;
     }
 
-    .page {
-      display: none;
-    }
-
-    .page.active {
-      display: block;
-    }
+    .page { display: none; }
+    .page.active { display: block; }
 
     .panel {
       padding: 18px;
@@ -382,6 +346,12 @@
       gap: 18px;
     }
 
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 18px;
+    }
+
     .grid-4 {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
@@ -394,12 +364,6 @@
       gap: 18px;
     }
 
-    .grid-3{
-      display:grid;
-      grid-template-columns:repeat(3,1fr);
-      gap:18px;
-    }
-    
     .signal-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
@@ -411,12 +375,6 @@
       border: 1px solid rgba(255,255,255,0.06);
       border-radius: 18px;
       padding: 16px;
-      transition: background 0.25s ease, border-color 0.25s ease;
-    }
-
-    html[data-theme="light"] .signal-card {
-      background: rgba(15,23,42,0.03);
-      border: 1px solid rgba(15,23,42,0.06);
     }
 
     .signal-top {
@@ -486,11 +444,6 @@
       border-left: 4px solid var(--blue);
       border-radius: 14px;
       padding: 12px 14px;
-      transition: background 0.25s ease;
-    }
-
-    html[data-theme="light"] .feed-item {
-      background: rgba(15,23,42,0.03);
     }
 
     .feed-item.buy { border-left-color: var(--green); }
@@ -537,12 +490,6 @@
       background: var(--input-bg);
       color: var(--text);
       outline: none;
-      transition: background 0.25s ease, border-color 0.25s ease, color 0.25s ease;
-    }
-
-    html[data-theme="light"] .control select,
-    html[data-theme="light"] .control input {
-      border: 1px solid rgba(15,23,42,0.10);
     }
 
     .chart-box {
@@ -551,7 +498,6 @@
       background: var(--chart-bg);
       border-radius: 18px;
       overflow: hidden;
-      transition: background 0.25s ease;
     }
 
     .chart-box-sm {
@@ -560,24 +506,18 @@
       background: var(--chart-bg);
       border-radius: 18px;
       overflow: hidden;
-      transition: background 0.25s ease;
     }
 
     #mainChart, #btChart {
       width: 100%;
       height: 100%;
-      min-height: 100%;
+      min-height: 560px;
     }
 
     .table-wrap {
       overflow-x: auto;
       border-radius: 14px;
       border: 1px solid rgba(255,255,255,0.06);
-      transition: border-color 0.25s ease;
-    }
-
-    html[data-theme="light"] .table-wrap {
-      border: 1px solid rgba(15,23,42,0.08);
     }
 
     table {
@@ -585,7 +525,6 @@
       border-collapse: collapse;
       min-width: 760px;
       background: var(--table-bg);
-      transition: background 0.25s ease;
     }
 
     th, td {
@@ -593,11 +532,6 @@
       border-bottom: 1px solid rgba(255,255,255,0.06);
       text-align: left;
       font-size: 14px;
-    }
-
-    html[data-theme="light"] th,
-    html[data-theme="light"] td {
-      border-bottom: 1px solid rgba(15,23,42,0.06);
     }
 
     th {
@@ -638,30 +572,18 @@
       animation: spin 0.7s linear infinite;
     }
 
-    .hidden {
-      display: none !important;
-    }
+    .hidden { display: none !important; }
 
     @keyframes spin { to { transform: rotate(360deg); } }
 
     @media (max-width: 1280px) {
-      .stats-row {
-        grid-template-columns: repeat(3, 1fr);
-      }
-      .controls-grid {
-        grid-template-columns: repeat(3, 1fr);
-      }
-      .grid-2,
-      .topbar {
-        grid-template-columns: 1fr;
-      }
+      .stats-row { grid-template-columns: repeat(3, 1fr); }
+      .controls-grid { grid-template-columns: repeat(3, 1fr); }
+      .grid-2, .topbar { grid-template-columns: 1fr; }
     }
 
     @media (max-width: 980px) {
-      .app-shell {
-        grid-template-columns: 1fr;
-      }
-
+      .app-shell { grid-template-columns: 1fr; }
       .sidebar {
         position: relative;
         height: auto;
@@ -669,26 +591,12 @@
         border-right: none;
         border-bottom: 1px solid var(--border);
       }
-
-      .grid-4,
-      .grid-5,
-      .stats-row {
-        grid-template-columns: repeat(2, 1fr);
-      }
+      .grid-4, .grid-5, .stats-row { grid-template-columns: repeat(2, 1fr); }
     }
 
     @media (max-width: 680px) {
-      .main {
-        padding: 14px;
-      }
-
-      .controls-grid,
-      .grid-4,
-      .grid-5,
-      .stats-row {
-        grid-template-columns: 1fr;
-      }
-
+      .main { padding: 14px; }
+      .controls-grid, .grid-3, .grid-4, .grid-5, .stats-row { grid-template-columns: 1fr; }
       .hero-card {
         flex-direction: column;
         align-items: flex-start;
@@ -696,6 +604,7 @@
     }
   </style>
 </head>
+
 <body>
   <div class="app-shell">
     <aside class="sidebar">
@@ -708,13 +617,12 @@
       </div>
 
       <div class="nav-list">
-
-      <<a class="nav-btn active" data-page="dashboard" href="#">🏠 Dashboard</a>
-<a class="nav-btn" data-page="charts" href="#">📉 Charts</a>
-<a class="nav-btn" data-page="analytics" href="#">📊 Analytics</a>
-<a class="nav-btn" data-page="realtime" href="#">⚡ Realtime</a>
-<a class="nav-btn" data-page="backtester" href="#">🧪 Backtester</a>
-        /div>
+        <a class="nav-btn active" data-page="dashboard" href="#">🏠 Dashboard</a>
+        <a class="nav-btn" data-page="charts" href="#">📉 Charts</a>
+        <a class="nav-btn" data-page="analytics" href="#">📊 Analytics</a>
+        <a class="nav-btn" data-page="realtime" href="#">⚡ Realtime</a>
+        <a class="nav-btn" data-page="backtester" href="#">🧪 Backtester</a>
+      </div>
 
       <div class="sidebar-meta">
         <div class="sidebar-meta-title">Connection</div>
@@ -742,10 +650,7 @@
         <div class="hero-card">
           <div>
             <h2>AI Trading Terminal</h2>
-            <p>
-              One professional workspace for live signals, charts, analytics,
-              realtime trade monitoring, and unified bot backtesting.
-            </p>
+            <p>One professional workspace for live signals, charts, analytics, realtime trade monitoring, and unified bot backtesting.</p>
             <div class="hero-actions">
               <button class="btn primary" id="globalRefreshBtn" type="button">Refresh Engine</button>
               <a class="btn" id="goBacktesterBtn" href="/backtester">Open Backtester</a>
@@ -773,7 +678,6 @@
         </div>
       </div>
 
-      <!-- DASHBOARD -->
       <section id="page-dashboard" class="page active">
         <div class="stats-row">
           <div class="stat-card"><div class="label">Balance</div><div id="dashBalance" class="value">$0.00</div></div>
@@ -799,118 +703,68 @@
         </div>
       </section>
 
-// ================= CHARTS =================
-<style>
-#mainChart {
-  width: 100%;
-  height: 500px;
-}
+      <section id="page-charts" class="page">
+        <div class="panel" style="margin-bottom:18px;">
+          <div class="controls-grid">
+            <div class="control">
+              <label>Symbol</label>
+              <select id="chartSymbol">
+                <option value="BTCUSDT">BTCUSDT</option>
+                <option value="ETHUSDT">ETHUSDT</option>
+                <option value="BNBUSDT">BNBUSDT</option>
+                <option value="SOLUSDT">SOLUSDT</option>
+              </select>
+            </div>
 
-#btChart {
-  width: 100%;
-  height: 500px;
-}
-</style>
+            <div class="control">
+              <label>Interval</label>
+              <select id="chartInterval">
+                <option value="1m">1m</option>
+                <option value="5m" selected>5m</option>
+                <option value="15m">15m</option>
+                <option value="1h">1h</option>
+                <option value="4h">4h</option>
+              </select>
+            </div>
 
-<script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+            <div class="control">
+              <label>Strategy View</label>
+              <select id="chartStrategy">
+                <option value="bot" selected>Unified Live Bot</option>
+                <option value="basic">Basic</option>
+                <option value="smart_money">Smart Money</option>
+                <option value="ema_rsi">EMA + RSI</option>
+              </select>
+            </div>
 
-<script>
+            <div class="control" style="display:flex;align-items:flex-end;">
+              <button id="chartRefreshBtn" class="btn primary" style="width:100%;" type="button">Refresh Chart</button>
+            </div>
+          </div>
+        </div>
 
-const pages = ["dashboard", "charts", "analytics", "realtime", "backtester"];
+        <div class="grid-2">
+          <div class="panel">
+            <h3 class="panel-title">Execution Chart</h3>
+            <div class="panel-subtitle">Candles, buy/sell markers, TP/SL, BOS, order blocks and FVGs</div>
+            <div class="chart-box">
+              <div id="mainChart"></div>
+            </div>
+          </div>
 
-function showPage(page) {
-  pages.forEach(p => {
-    document.getElementById(`page-${p}`).classList.toggle("active", p === page);
-  });
+          <div class="panel">
+            <h3 class="panel-title">Trade Levels</h3>
+            <div class="panel-subtitle">Latest backend-generated entries, stop losses and take profits</div>
+            <div id="chartLevels" class="feed-list">
+              <div class="feed-item info">
+                <div class="feed-time">Waiting</div>
+                <div class="feed-text">Load the chart to see trade levels.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
 
-  document.querySelectorAll(".nav-link").forEach(btn => {
-    btn.classList.toggle("active", btn.dataset.page === page);
-  });
-
-  // 🔥 FIX: recreate charts ONLY when visible
-  setTimeout(() => {
-    if (page === "charts") {
-      createMainChart();
-      loadMainChart();
-    }
-
-    if (page === "backtester") {
-      createBacktestChart();
-      loadBacktestChartData();
-    }
-  }, 300);
-
-  history.replaceState(null, "", page === "dashboard" ? "/" : `/${page}`);
-}
-
-// NAV CLICK FIX (ensure it exists AFTER DOM loads)
-document.addEventListener("DOMContentLoaded", () => {
-  document.querySelectorAll(".nav-link").forEach(btn => {
-    btn.addEventListener("click", () => showPage(btn.dataset.page));
-  });
-});
-
-
-
-let mainChart, mainSeries;
-
-function createMainChart() {
-  const el = document.getElementById("mainChart");
-  if (!el) return;
-
-  el.innerHTML = "";
-
-  mainChart = LightweightCharts.createChart(el, {
-    width: el.clientWidth || 800,
-    height: el.clientHeight || 500,
-    layout: { background: { color: "#0f172a" }, textColor: "#cbd5e1" },
-    grid: {
-      vertLines: { color: "rgba(255,255,255,0.05)" },
-      horzLines: { color: "rgba(255,255,255,0.05)" }
-    }
-  });
-
-  mainSeries = mainChart.addCandlestickSeries();
-
-  window.addEventListener("resize", () => {
-    if (mainChart) {
-      mainChart.applyOptions({
-        width: el.clientWidth,
-        height: el.clientHeight
-      });
-    }
-  });
-}
-
-async function loadMainChart() {
-  if (!mainSeries) return;
-
-  try {
-    const symbol = document.getElementById("chartSymbol").value;
-    const interval = document.getElementById("chartInterval").value;
-
-    const res = await fetch(`/api/chart-candles?symbol=${symbol}&interval=${interval}&limit=150`);
-    const data = await res.json();
-
-    const candles = data.data || [];
-
-    if (!candles.length) {
-      console.warn("No candle data received");
-      return;
-    }
-
-    mainSeries.setData(candles);
-    mainChart.timeScale().fitContent();
-
-  } catch (err) {
-    console.error("Chart load failed:", err);
-  }
-}
-
-</script>
-
-
-      <!-- ANALYTICS -->
       <section id="page-analytics" class="page">
         <div class="grid-4" style="margin-bottom:18px;">
           <div class="stat-card"><div class="label">Total Trades</div><div id="anTotalTrades" class="value">0</div></div>
@@ -941,7 +795,6 @@ async function loadMainChart() {
         </div>
       </section>
 
-      <!-- REALTIME -->
       <section id="page-realtime" class="page">
         <div class="grid-4" style="margin-bottom:18px;">
           <div class="stat-card"><div class="label">Total Live PnL</div><div id="rtTotalLivePnl" class="value">$0.00</div></div>
@@ -972,7 +825,6 @@ async function loadMainChart() {
         </div>
       </section>
 
-      <!-- BACKTESTER -->
       <section id="page-backtester" class="page">
         <div id="errorBox" class="error-box"></div>
         <div id="successBox" class="success-box"></div>
@@ -1008,16 +860,7 @@ async function loadMainChart() {
                 <option value="300">300</option>
               </select>
             </div>
-           
-            <div class="control">
-              <label>Start Date</label>
-              <input id="btStartDate" type="date" />
-            </div>
-            
-            <div class="control">
-              <label>End Date</label>
-              <input id="btEndDate" type="date" />
-            </div>
+
             <div class="control">
               <label>Strategy</label>
               <select id="btStrategy">
@@ -1050,35 +893,6 @@ async function loadMainChart() {
           <div class="stat-card"><div class="label">Best Trade</div><div id="btBestTrade" class="value">$0.00</div></div>
         </div>
 
-<div class="grid-5" style="margin-bottom:18px;">
-  <div class="stat-card"><div class="label">Profit Factor</div><div id="btProfitFactor" class="value">0.00</div></div>
-  <div class="stat-card"><div class="label">Max Drawdown</div><div id="btMaxDrawdown" class="value negative">$0.00</div></div>
-  <div class="stat-card"><div class="label">Average Win</div><div id="btAverageWin" class="value positive">$0.00</div></div>
-  <div class="stat-card"><div class="label">Average Loss</div><div id="btAverageLoss" class="value negative">$0.00</div></div>
-  <div class="stat-card"><div class="label">Expectancy</div><div id="btExpectancy" class="value">$0.00</div></div>
-</div>
-
-<div class="grid-5" style="margin-bottom:18px;">
-  <div class="stat-card"><div class="label">Consecutive Losses</div><div id="btConsecutiveLosses" class="value">0</div></div>
-  <div class="stat-card"><div class="label">Fees Paid</div><div id="btFeesPaid" class="value negative">$0.00</div></div>
-  <div class="stat-card"><div class="label">Slippage Paid</div><div id="btSlippagePaid" class="value negative">$0.00</div></div>
-  <div class="stat-card"><div class="label">Trades Per Day</div><div id="btTradesPerDay" class="value">0</div></div>
-  <div class="stat-card"><div class="label">Worst Trade</div><div id="btWorstTrade" class="value negative">$0.00</div></div>
-</div>
-
-<div class="grid-4" style="margin-bottom:18px;">
-  <div class="stat-card"><div class="label">Best Symbol</div><div id="btBestSymbol" class="value">N/A</div></div>
-  <div class="stat-card"><div class="label">Worst Symbol</div><div id="btWorstSymbol" class="value">N/A</div></div>
-  <div class="stat-card"><div class="label">Best Timeframe</div><div id="btBestTimeframe" class="value">N/A</div></div>
-  <div class="stat-card"><div class="label">Worst Timeframe</div><div id="btWorstTimeframe" class="value">N/A</div></div>
-</div>
-
-<div class="grid-3" style="margin-bottom:18px;">
-  <div class="stat-card"><div class="label">London Session</div><div id="btLondonSession" class="value">$0.00</div></div>
-  <div class="stat-card"><div class="label">New York Session</div><div id="btNewYorkSession" class="value">$0.00</div></div>
-  <div class="stat-card"><div class="label">Asia Session</div><div id="btAsiaSession" class="value">$0.00</div></div>
-</div>
-        
         <div class="grid-2" style="margin-bottom:18px;">
           <div class="panel">
             <h3 class="panel-title">Historical Chart View</h3>
@@ -1087,16 +901,7 @@ async function loadMainChart() {
               <div id="btChart"></div>
             </div>
           </div>
-       
-        <div class="control">
-          <label>Fee %</label>
-          <input id="btFeePercent" type="number" value="0.04" step="0.01" min="0" />
-        </div>
-        
-        <div class="control">
-          <label>Slippage %</label>
-          <input id="btSlippagePercent" type="number" value="0.02" step="0.01" min="0" />
-        </div>
+
           <div class="panel">
             <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
               <div>
@@ -1151,12 +956,8 @@ async function loadMainChart() {
           modules[name] = { factory, instance: null };
         },
         require(name) {
-          if (!modules[name]) {
-            throw new Error(`Module not found: ${name}`);
-          }
-          if (!modules[name].instance) {
-            modules[name].instance = modules[name].factory();
-          }
+          if (!modules[name]) throw new Error(`Module not found: ${name}`);
+          if (!modules[name].instance) modules[name].instance = modules[name].factory();
           return modules[name].instance;
         }
       };
@@ -1180,9 +981,7 @@ async function loadMainChart() {
         const text = await res.text();
         let data = {};
         try { data = text ? JSON.parse(text) : {}; } catch (_) {}
-        if (!res.ok) {
-          throw new Error(data.error || `Request failed (${res.status})`);
-        }
+        if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
         return data;
       }
 
@@ -1200,12 +999,8 @@ async function loadMainChart() {
         const btn = document.getElementById("themeToggleBtn");
         const label = document.getElementById("themeLabel");
 
-        if (btn) {
-          btn.textContent = theme === "dark" ? "☀️ Switch to Light Mode" : "🌙 Switch to Dark Mode";
-        }
-        if (label) {
-          label.textContent = theme === "dark" ? "Dark" : "Light";
-        }
+        if (btn) btn.textContent = theme === "dark" ? "☀️ Switch to Light Mode" : "🌙 Switch to Dark Mode";
+        if (label) label.textContent = theme === "dark" ? "Dark" : "Light";
 
         try { AppModules.require("charts").refreshTheme(); } catch (_) {}
         try { AppModules.require("backtester").refreshTheme(); } catch (_) {}
@@ -1228,6 +1023,7 @@ async function loadMainChart() {
             legend: "#334155"
           };
         }
+
         return {
           bg: "#0c1729",
           text: "#cbd5e1",
@@ -1322,11 +1118,7 @@ async function loadMainChart() {
         refreshTimer = setInterval(doRefreshCycle, 15000);
       }
 
-      return {
-        on,
-        start,
-        refreshNow: doRefreshCycle
-      };
+      return { on, start, refreshNow: doRefreshCycle };
     });
 
     AppModules.define("nav", () => {
@@ -1343,9 +1135,7 @@ async function loadMainChart() {
         });
 
         const targetPath = page === "dashboard" ? "/" : `/${page}`;
-        if (location.pathname !== targetPath) {
-          history.replaceState(null, "", targetPath);
-        }
+        if (location.pathname !== targetPath) history.replaceState(null, "", targetPath);
 
         if (page === "charts") {
           setTimeout(async () => {
@@ -1375,8 +1165,7 @@ async function loadMainChart() {
         document.querySelectorAll(".nav-btn").forEach(link => {
           link.addEventListener("click", async (e) => {
             e.preventDefault();
-            const page = link.dataset.page;
-            await showPage(page);
+            await showPage(link.dataset.page);
           });
         });
 
@@ -1465,11 +1254,7 @@ async function loadMainChart() {
         document.getElementById("topWinRate").textContent = `${Number(stats.win_rate || 0).toFixed(1)}%`;
       }
 
-      return {
-        renderSignalPayload,
-        renderStats,
-        renderAlerts
-      };
+      return { renderSignalPayload, renderStats, renderAlerts };
     });
 
     AppModules.define("charts", () => {
@@ -1489,8 +1274,9 @@ async function loadMainChart() {
         if (!container) return;
 
         container.innerHTML = "";
-        const width = Math.max(container.clientWidth || 300, 300);
+
         const colors = theme.getChartColors();
+        const width = Math.max(container.clientWidth || 800, 300);
 
         mainChart = LightweightCharts.createChart(container, {
           width,
@@ -1521,26 +1307,28 @@ async function loadMainChart() {
           wickDownColor: "#ef4444"
         });
 
-        window.addEventListener("resize", () => {
-          ensureVisible();
-        });
+        window.addEventListener("resize", ensureVisible);
       }
 
       function ensureVisible() {
         const container = getContainer();
         if (!container || !mainChart) return;
 
-        const width = Math.max(container.clientWidth || 300, 300);
-        mainChart.applyOptions({ width, height: 560 });
+        mainChart.applyOptions({
+          width: Math.max(container.clientWidth || 800, 300),
+          height: 560
+        });
 
         setTimeout(() => {
-          try { mainChart.timeScale().fitContent(); } catch (_) {}
+          try { mainChart.timeScale().fitContent(); } catch (e) {}
         }, 50);
       }
 
       function refreshTheme() {
         if (!mainChart) return;
+
         const colors = theme.getChartColors();
+
         mainChart.applyOptions({
           layout: {
             background: { color: colors.bg },
@@ -1556,8 +1344,8 @@ async function loadMainChart() {
       }
 
       function clearLines() {
-        mainLineSeries.forEach(s => {
-          try { mainChart.removeSeries(s); } catch (_) {}
+        mainLineSeries.forEach(series => {
+          try { mainChart.removeSeries(series); } catch (e) {}
         });
         mainLineSeries = [];
       }
@@ -1565,6 +1353,7 @@ async function loadMainChart() {
       function addLine(price, color) {
         const firstTime = window._mainCandles?.[0]?.time;
         const lastTime = window._mainCandles?.[window._mainCandles.length - 1]?.time;
+
         if (firstTime == null || lastTime == null || !mainChart) return;
 
         const series = mainChart.addLineSeries({
@@ -1584,18 +1373,19 @@ async function loadMainChart() {
       }
 
       async function load() {
-        if (!mainChart || !mainCandleSeries) {
-          create();
-        }
+        if (!mainChart || !mainCandleSeries) create();
 
         const symbol = document.getElementById("chartSymbol")?.value || "BTCUSDT";
-        const interval = document.getElementById("chartInterval")?.value || "1m";
+        const interval = document.getElementById("chartInterval")?.value || "5m";
 
-        const candleRes = await fetchJSON(`/api/chart-candles?symbol=${symbol}&interval=${interval}&limit=120`);
-        const overlayRes = await fetchJSON(`/api/chart-overlays?symbol=${symbol}&interval=${interval}&limit=120`);
+        const candleRes = await fetchJSON(`/api/chart-candles?symbol=${symbol}&interval=${interval}&limit=200`);
+        const overlayRes = await fetchJSON(`/api/chart-overlays?symbol=${symbol}&interval=${interval}&limit=200`);
 
         const candles = candleRes.data || [];
         const overlays = overlayRes.data || {};
+
+        if (!candles.length) throw new Error(candleRes.error || "No candle data returned.");
+
         window._mainCandles = candles;
 
         mainCandleSeries.setData(candles);
@@ -1613,9 +1403,15 @@ async function loadMainChart() {
         });
 
         const levelsBox = document.getElementById("chartLevels");
+
         if (levelsBox) {
           if (!overlays.trade_levels || !overlays.trade_levels.length) {
-            levelsBox.innerHTML = `<div class="feed-item info"><div class="feed-time">No Data</div><div class="feed-text">No recent levels.</div></div>`;
+            levelsBox.innerHTML = `
+              <div class="feed-item info">
+                <div class="feed-time">No Data</div>
+                <div class="feed-text">No recent levels.</div>
+              </div>
+            `;
           } else {
             levelsBox.innerHTML = overlays.trade_levels.slice().reverse().map(level => `
               <div class="signal-card" style="margin-bottom:12px;">
@@ -1691,9 +1487,7 @@ async function loadMainChart() {
           options: {
             responsive: true,
             maintainAspectRatio: false,
-            plugins: {
-              legend: { labels: { color: colors.legend } }
-            },
+            plugins: { legend: { labels: { color: colors.legend } } },
             scales: {
               x: { ticks: { color: colors.label }, grid: { color: colors.grid } },
               y: { ticks: { color: colors.label }, grid: { color: colors.grid } }
@@ -1702,9 +1496,7 @@ async function loadMainChart() {
         });
       }
 
-      function refreshTheme() {
-        // next live analytics refresh will redraw chart
-      }
+      function refreshTheme() {}
 
       return { renderStats, renderHistory, renderEquity, refreshTheme };
     });
@@ -1721,6 +1513,7 @@ async function loadMainChart() {
         document.getElementById("topOpenTrades").textContent = (openTrades || []).length;
 
         const tbody = document.getElementById("realtimeTrades");
+
         if (!openTrades.length) {
           tbody.innerHTML = `<tr><td colspan="5" style="color:var(--muted);">No open trades yet</td></tr>`;
           return;
@@ -1728,17 +1521,18 @@ async function loadMainChart() {
 
         tbody.innerHTML = openTrades.map(t => `
           <tr>
-            <td>${t.symbol}</td>
-            <td class="${t.side === "BUY" ? "positive" : "negative"}">${t.side}</td>
-            <td>${Number(t.entry_price).toFixed(2)}</td>
-            <td>${Number(t.current_price).toFixed(2)}</td>
-            <td class="${Number(t.pnl) >= 0 ? "positive" : "negative"}">${formatMoney(t.pnl)}</td>
+            <td>${t.symbol || "--"}</td>
+            <td class="${(t.side || t.type) === "BUY" ? "positive" : "negative"}">${t.side || t.type || "--"}</td>
+            <td>${Number(t.entry_price || t.entry || 0).toFixed(2)}</td>
+            <td>${Number(t.current_price || t.price || 0).toFixed(2)}</td>
+            <td class="${Number(t.pnl || 0) >= 0 ? "positive" : "negative"}">${formatMoney(t.pnl || 0)}</td>
           </tr>
         `).join("");
       }
 
       function renderFeed(alerts) {
         const box = document.getElementById("realtimeFeed");
+
         if (!alerts || !alerts.length) {
           box.innerHTML = `<div class="feed-item info"><div class="feed-time">Waiting</div><div class="feed-text">No live events yet.</div></div>`;
           return;
@@ -1793,22 +1587,10 @@ async function loadMainChart() {
         btChart = LightweightCharts.createChart(container, {
           width,
           height: 580,
-          layout: {
-            background: { color: colors.bg },
-            textColor: colors.text
-          },
-          grid: {
-            vertLines: { color: colors.grid },
-            horzLines: { color: colors.grid }
-          },
-          timeScale: {
-            borderColor: colors.border,
-            timeVisible: true,
-            secondsVisible: false
-          },
-          rightPriceScale: {
-            borderColor: colors.border
-          }
+          layout: { background: { color: colors.bg }, textColor: colors.text },
+          grid: { vertLines: { color: colors.grid }, horzLines: { color: colors.grid } },
+          timeScale: { borderColor: colors.border, timeVisible: true, secondsVisible: false },
+          rightPriceScale: { borderColor: colors.border }
         });
 
         btCandleSeries = btChart.addCandlestickSeries({
@@ -1819,17 +1601,17 @@ async function loadMainChart() {
           wickDownColor: "#ef4444"
         });
 
-        window.addEventListener("resize", () => {
-          ensureVisible();
-        });
+        window.addEventListener("resize", ensureVisible);
       }
 
       function ensureVisible() {
         const container = getContainer();
         if (!container || !btChart) return;
 
-        const width = Math.max(container.clientWidth || 300, 300);
-        btChart.applyOptions({ width, height: 580 });
+        btChart.applyOptions({
+          width: Math.max(container.clientWidth || 300, 300),
+          height: 580
+        });
 
         setTimeout(() => {
           try { btChart.timeScale().fitContent(); } catch (_) {}
@@ -1838,16 +1620,12 @@ async function loadMainChart() {
 
       function refreshTheme() {
         if (!btChart) return;
+
         const colors = theme.getChartColors();
+
         btChart.applyOptions({
-          layout: {
-            background: { color: colors.bg },
-            textColor: colors.text
-          },
-          grid: {
-            vertLines: { color: colors.grid },
-            horzLines: { color: colors.grid }
-          },
+          layout: { background: { color: colors.bg }, textColor: colors.text },
+          grid: { vertLines: { color: colors.grid }, horzLines: { color: colors.grid } },
           timeScale: { borderColor: colors.border },
           rightPriceScale: { borderColor: colors.border }
         });
@@ -1863,6 +1641,7 @@ async function loadMainChart() {
       function addLine(price, color) {
         const firstTime = window._btCandles?.[0]?.time;
         const lastTime = window._btCandles?.[window._btCandles.length - 1]?.time;
+
         if (firstTime == null || lastTime == null || !btChart) return;
 
         const series = btChart.addLineSeries({
@@ -1907,36 +1686,16 @@ async function loadMainChart() {
       }
 
       function updateSummary(summary) {
-        document.getElementById("btNetPnl").textContent = formatMoney(summary.net_pnl);
-        document.getElementById("btFinalBalance").textContent = formatMoney(summary.final_balance);
-        document.getElementById("btBestTrade").textContent = formatMoney(summary.best_trade);
+        document.getElementById("btNetPnl").textContent = formatMoney(summary.net_pnl || 0);
+        document.getElementById("btFinalBalance").textContent = formatMoney(summary.final_balance || 0);
+        document.getElementById("btBestTrade").textContent = formatMoney(summary.best_trade || 0);
         document.getElementById("btTotalTrades").textContent = summary.total_trades || 0;
         document.getElementById("btWinRate").textContent = `${Number(summary.win_rate || 0).toFixed(2)}%`;
 
         document.getElementById("btNetPnl").className = `value ${Number(summary.net_pnl || 0) >= 0 ? "positive" : "negative"}`;
         document.getElementById("btFinalBalance").className = `value ${(Number(summary.final_balance || 0) - Number(summary.starting_balance || 0)) >= 0 ? "positive" : "negative"}`;
         document.getElementById("btBestTrade").className = `value ${Number(summary.best_trade || 0) >= 0 ? "positive" : "negative"}`;
-        document.getElementById("btProfitFactor").textContent = Number(summary.profit_factor || 0).toFixed(2);
-        document.getElementById("btMaxDrawdown").textContent = formatMoney(summary.max_drawdown || 0);
-        document.getElementById("btAverageWin").textContent = formatMoney(summary.average_win || 0);
-        document.getElementById("btAverageLoss").textContent = formatMoney(summary.average_loss || 0);
-        document.getElementById("btExpectancy").textContent = formatMoney(summary.expectancy || 0);
-        document.getElementById("btConsecutiveLosses").textContent = summary.max_consecutive_losses || 0;
-        document.getElementById("btFeesPaid").textContent = formatMoney(summary.fees_paid || 0);
-        document.getElementById("btSlippagePaid").textContent = formatMoney(summary.slippage_paid || 0);
-        document.getElementById("btTradesPerDay").textContent = Number(summary.trades_per_day || 0).toFixed(2);
-        document.getElementById("btWorstTrade").textContent = formatMoney(summary.worst_trade || 0);
-        
-        document.getElementById("btBestSymbol").textContent = summary.best_symbol || "N/A";
-        document.getElementById("btWorstSymbol").textContent = summary.worst_symbol || "N/A";
-        document.getElementById("btBestTimeframe").textContent = summary.best_timeframe || "N/A";
-        document.getElementById("btWorstTimeframe").textContent = summary.worst_timeframe || "N/A";
-        
-        const session = summary.session_performance || {};
-        document.getElementById("btLondonSession").textContent = formatMoney(session.London || 0);
-        document.getElementById("btNewYorkSession").textContent = formatMoney(session["New York"] || 0);
-        document.getElementById("btAsiaSession").textContent = formatMoney(session.Asia || 0);
-              }
+      }
 
       function renderSignals(signals) {
         const container = document.getElementById("btSignalsContainer");
@@ -1998,13 +1757,17 @@ async function loadMainChart() {
           total_trades: 0,
           win_rate: 0
         });
+
         renderSignals([]);
         renderTrades([]);
         clearLines();
+
         if (btCandleSeries) btCandleSeries.setData([]);
       }
 
       async function loadChartData() {
+        if (!btChart || !btCandleSeries) create();
+
         const symbol = document.getElementById("btSymbol").value;
         const interval = document.getElementById("btInterval").value;
 
@@ -2013,6 +1776,7 @@ async function loadMainChart() {
 
         const candles = candleRes.data || [];
         const overlays = overlayRes.data || {};
+
         window._btCandles = candles;
 
         btCandleSeries.setData(candles);
@@ -2022,6 +1786,7 @@ async function loadMainChart() {
         }
 
         clearLines();
+
         (overlays.trade_levels || []).forEach(level => {
           addLine(level.entry, level.side === "BUY" ? "#22c55e" : "#ef4444");
           addLine(level.sl, "#f59e0b");
@@ -2038,15 +1803,11 @@ async function loadMainChart() {
         const limit = Number(document.getElementById("btLimit").value);
         const strategy = document.getElementById("btStrategy").value;
         const startingBalance = Number(document.getElementById("btStartingBalance").value);
-        const startDate = document.getElementById("btStartDate").value;
-        const endDate = document.getElementById("btEndDate").value;
 
         const btn = document.getElementById("runBacktestBtn");
         const btnText = document.getElementById("runBtnText");
         const loader = document.getElementById("runLoader");
-        const feePercent = Number(document.getElementById("btFeePercent").value || 0);
-        const slippagePercent = Number(document.getElementById("btSlippagePercent").value || 0);
-        
+
         clearError();
 
         if (!startingBalance || startingBalance <= 0) {
@@ -2067,17 +1828,13 @@ async function loadMainChart() {
           const data = await fetchJSON("/api/backtest", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-           body: JSON.stringify({
-            symbol,
-            interval,
-            limit,
-            strategy,
-            starting_balance: startingBalance,
-            start_date: startDate || null,
-            end_date: endDate || null,
-            fee_percent: feePercent,
-            slippage_percent: slippagePercent
-          })
+            body: JSON.stringify({
+              symbol,
+              interval,
+              limit,
+              strategy,
+              starting_balance: startingBalance
+            })
           });
 
           updateSummary(data.summary || {});
@@ -2118,43 +1875,27 @@ async function loadMainChart() {
         document.getElementById("chartStrategy").addEventListener("change", () => charts.load().catch(console.error));
 
         document.getElementById("runBacktestBtn").addEventListener("click", () => backtester.run());
+
         document.getElementById("globalRefreshBtn").addEventListener("click", async () => {
-          try {
-            await livebus.refreshNow();
-          } catch (e) {
-            console.error(e);
-          }
+          try { await livebus.refreshNow(); } catch (e) { console.error(e); }
         });
 
-        livebus.on("dashboard:data", (data) => {
-          dashboard.renderSignalPayload(data);
-        });
+        livebus.on("dashboard:data", data => dashboard.renderSignalPayload(data));
 
-        livebus.on("alerts:data", (alerts) => {
+        livebus.on("alerts:data", alerts => {
           dashboard.renderAlerts(alerts || []);
           realtime.renderFeed(alerts || []);
         });
 
-        livebus.on("stats:data", (stats) => {
+        livebus.on("stats:data", stats => {
           dashboard.renderStats(stats);
           analytics.renderStats(stats);
         });
 
-        livebus.on("history:data", (history) => {
-          analytics.renderHistory(history);
-        });
-
-        livebus.on("equity:data", (equity) => {
-          analytics.renderEquity(equity);
-        });
-
-        livebus.on("live_trades:data", (openTrades) => {
-          realtime.renderTrades(openTrades || []);
-        });
-
-        livebus.on("signal_map:data", (signalMap) => {
-          realtime.renderSignalMap(signalMap || {});
-        });
+        livebus.on("history:data", history => analytics.renderHistory(history));
+        livebus.on("equity:data", equity => analytics.renderEquity(equity));
+        livebus.on("live_trades:data", openTrades => realtime.renderTrades(openTrades || []));
+        livebus.on("signal_map:data", signalMap => realtime.renderSignalMap(signalMap || {}));
 
         livebus.on("engine:error", () => {
           document.getElementById("sbEngineStatus").textContent = "Error";
@@ -2176,24 +1917,3 @@ async function loadMainChart() {
   </script>
 </body>
 </html>
-#charts page fix
-<script>
-window.addEventListener("load", async () => {
-    const container = document.getElementById("mainChart");
-    if (!container) return;
-
-    const chart = LightweightCharts.createChart(container, {
-        width: container.clientWidth,
-        height: 400
-    });
-
-    const candleSeries = chart.addCandlestickSeries();
-
-    const res = await fetch("/api/chart-candles");
-    const json = await res.json();
-
-    if (json.ok) {
-        candleSeries.setData(json.data);
-    }
-});
-</script>
