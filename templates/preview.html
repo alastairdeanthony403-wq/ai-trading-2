@@ -1920,6 +1920,8 @@
         const limit = Number(document.getElementById("btLimit").value);
         const strategy = document.getElementById("btStrategy").value;
         const startingBalance = Number(document.getElementById("btStartingBalance").value);
+        const startDate = document.getElementById("btStartDate").value;
+        const endDate = document.getElementById("btEndDate").value;
 
         const btn = document.getElementById("runBacktestBtn");
         const btnText = document.getElementById("runBtnText");
@@ -1945,13 +1947,15 @@
           const data = await fetchJSON("/api/backtest", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              symbol,
-              interval,
-              limit,
-              strategy,
-              starting_balance: startingBalance
-            })
+           body: JSON.stringify({
+            symbol,
+            interval,
+            limit,
+            strategy,
+            starting_balance: startingBalance,
+            start_date: startDate || null,
+            end_date: endDate || null
+          })
           });
 
           updateSummary(data.summary || {});
