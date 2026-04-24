@@ -394,6 +394,12 @@
       gap: 18px;
     }
 
+    .grid-3{
+      display:grid;
+      grid-template-columns:repeat(3,1fr);
+      gap:18px;
+    }
+    
     .signal-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
@@ -990,6 +996,35 @@
           <div class="stat-card"><div class="label">Best Trade</div><div id="btBestTrade" class="value">$0.00</div></div>
         </div>
 
+<div class="grid-5" style="margin-bottom:18px;">
+  <div class="stat-card"><div class="label">Profit Factor</div><div id="btProfitFactor" class="value">0.00</div></div>
+  <div class="stat-card"><div class="label">Max Drawdown</div><div id="btMaxDrawdown" class="value negative">$0.00</div></div>
+  <div class="stat-card"><div class="label">Average Win</div><div id="btAverageWin" class="value positive">$0.00</div></div>
+  <div class="stat-card"><div class="label">Average Loss</div><div id="btAverageLoss" class="value negative">$0.00</div></div>
+  <div class="stat-card"><div class="label">Expectancy</div><div id="btExpectancy" class="value">$0.00</div></div>
+</div>
+
+<div class="grid-5" style="margin-bottom:18px;">
+  <div class="stat-card"><div class="label">Consecutive Losses</div><div id="btConsecutiveLosses" class="value">0</div></div>
+  <div class="stat-card"><div class="label">Fees Paid</div><div id="btFeesPaid" class="value negative">$0.00</div></div>
+  <div class="stat-card"><div class="label">Slippage Paid</div><div id="btSlippagePaid" class="value negative">$0.00</div></div>
+  <div class="stat-card"><div class="label">Trades Per Day</div><div id="btTradesPerDay" class="value">0</div></div>
+  <div class="stat-card"><div class="label">Worst Trade</div><div id="btWorstTrade" class="value negative">$0.00</div></div>
+</div>
+
+<div class="grid-4" style="margin-bottom:18px;">
+  <div class="stat-card"><div class="label">Best Symbol</div><div id="btBestSymbol" class="value">N/A</div></div>
+  <div class="stat-card"><div class="label">Worst Symbol</div><div id="btWorstSymbol" class="value">N/A</div></div>
+  <div class="stat-card"><div class="label">Best Timeframe</div><div id="btBestTimeframe" class="value">N/A</div></div>
+  <div class="stat-card"><div class="label">Worst Timeframe</div><div id="btWorstTimeframe" class="value">N/A</div></div>
+</div>
+
+<div class="grid-3" style="margin-bottom:18px;">
+  <div class="stat-card"><div class="label">London Session</div><div id="btLondonSession" class="value">$0.00</div></div>
+  <div class="stat-card"><div class="label">New York Session</div><div id="btNewYorkSession" class="value">$0.00</div></div>
+  <div class="stat-card"><div class="label">Asia Session</div><div id="btAsiaSession" class="value">$0.00</div></div>
+</div>
+        
         <div class="grid-2" style="margin-bottom:18px;">
           <div class="panel">
             <h3 class="panel-title">Historical Chart View</h3>
@@ -998,7 +1033,16 @@
               <div id="btChart"></div>
             </div>
           </div>
-
+       
+        <div class="control">
+          <label>Fee %</label>
+          <input id="btFeePercent" type="number" value="0.04" step="0.01" min="0" />
+        </div>
+        
+        <div class="control">
+          <label>Slippage %</label>
+          <input id="btSlippagePercent" type="number" value="0.02" step="0.01" min="0" />
+        </div>
           <div class="panel">
             <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
               <div>
@@ -1818,7 +1862,27 @@
         document.getElementById("btNetPnl").className = `value ${Number(summary.net_pnl || 0) >= 0 ? "positive" : "negative"}`;
         document.getElementById("btFinalBalance").className = `value ${(Number(summary.final_balance || 0) - Number(summary.starting_balance || 0)) >= 0 ? "positive" : "negative"}`;
         document.getElementById("btBestTrade").className = `value ${Number(summary.best_trade || 0) >= 0 ? "positive" : "negative"}`;
-      }
+        document.getElementById("btProfitFactor").textContent = Number(summary.profit_factor || 0).toFixed(2);
+        document.getElementById("btMaxDrawdown").textContent = formatMoney(summary.max_drawdown || 0);
+        document.getElementById("btAverageWin").textContent = formatMoney(summary.average_win || 0);
+        document.getElementById("btAverageLoss").textContent = formatMoney(summary.average_loss || 0);
+        document.getElementById("btExpectancy").textContent = formatMoney(summary.expectancy || 0);
+        document.getElementById("btConsecutiveLosses").textContent = summary.max_consecutive_losses || 0;
+        document.getElementById("btFeesPaid").textContent = formatMoney(summary.fees_paid || 0);
+        document.getElementById("btSlippagePaid").textContent = formatMoney(summary.slippage_paid || 0);
+        document.getElementById("btTradesPerDay").textContent = Number(summary.trades_per_day || 0).toFixed(2);
+        document.getElementById("btWorstTrade").textContent = formatMoney(summary.worst_trade || 0);
+        
+        document.getElementById("btBestSymbol").textContent = summary.best_symbol || "N/A";
+        document.getElementById("btWorstSymbol").textContent = summary.worst_symbol || "N/A";
+        document.getElementById("btBestTimeframe").textContent = summary.best_timeframe || "N/A";
+        document.getElementById("btWorstTimeframe").textContent = summary.worst_timeframe || "N/A";
+        
+        const session = summary.session_performance || {};
+        document.getElementById("btLondonSession").textContent = formatMoney(session.London || 0);
+        document.getElementById("btNewYorkSession").textContent = formatMoney(session["New York"] || 0);
+        document.getElementById("btAsiaSession").textContent = formatMoney(session.Asia || 0);
+              }
 
       function renderSignals(signals) {
         const container = document.getElementById("btSignalsContainer");
@@ -1926,7 +1990,9 @@
         const btn = document.getElementById("runBacktestBtn");
         const btnText = document.getElementById("runBtnText");
         const loader = document.getElementById("runLoader");
-
+        const feePercent = Number(document.getElementById("btFeePercent").value || 0);
+        const slippagePercent = Number(document.getElementById("btSlippagePercent").value || 0);
+        
         clearError();
 
         if (!startingBalance || startingBalance <= 0) {
@@ -1954,7 +2020,9 @@
             strategy,
             starting_balance: startingBalance,
             start_date: startDate || null,
-            end_date: endDate || null
+            end_date: endDate || null,
+            fee_percent: feePercent,
+            slippage_percent: slippagePercent
           })
           });
 
