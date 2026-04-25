@@ -1265,7 +1265,7 @@
       function start() {
         if (started) return;
         started = true;
-        tryWebSocket();
+        startPolling();
       }
 
       return {
