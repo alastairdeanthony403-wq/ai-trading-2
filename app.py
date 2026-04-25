@@ -139,24 +139,7 @@ def init_db():
     conn.close()
 
 
-init_db(    c.execute("""
-    CREATE TABLE IF NOT EXISTS backtest_runs (
-        id TEXT PRIMARY KEY,
-        symbol TEXT,
-        interval TEXT,
-        strategy TEXT,
-        start_date TEXT,
-        end_date TEXT,
-        total_trades INTEGER,
-        net_pnl REAL,
-        profit_factor REAL,
-        max_drawdown REAL,
-        max_drawdown_percent REAL,
-        win_rate REAL,
-        created_at TEXT
-    )
-    """))
-
+init_db()
 
 # ---------------- HELPERS ----------------
 def now_str():
