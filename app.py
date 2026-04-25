@@ -134,7 +134,24 @@ def init_db():
         created_at TEXT
     )
     """)
-
+   
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS backtest_runs (
+        id TEXT PRIMARY KEY,
+        symbol TEXT,
+        interval TEXT,
+        strategy TEXT,
+        start_date TEXT,
+        end_date TEXT,
+        total_trades INTEGER,
+        net_pnl REAL,
+        profit_factor REAL,
+        max_drawdown REAL,
+        max_drawdown_percent REAL,
+        win_rate REAL,
+        created_at TEXT
+    )
+    """)
     conn.commit()
     conn.close()
 
@@ -1772,7 +1789,7 @@ def api_chart_overlays():
 @app.route("/api/backtest", methods=["POST"])
 def api_backtest():
     try:
-        data = request.get_json(force=True)
+        data = request.get_json(force=True) or {}
 
         symbol = str(data.get("symbol", "BTCUSDT")).upper()
         interval = str(data.get("interval", "5m"))
@@ -1784,31 +1801,17 @@ def api_backtest():
         start_date = data.get("start_date")
         end_date = data.get("end_date")
 
-        limit = max(50, min(limit, 1000))
+        limit = max(100, min(limit, 1000))
 
-        candles = fetch_binance_raw(symbol=symbol, interval=interval, limit=limit)
-
-        if start_date or end_date:
-            filtered = []
-
-            start_dt = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=timezone.utc) if start_date else None
-            end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59, tzinfo=timezone.utc) if end_date else None
-
-            for candle in candles:
-                candle_dt = datetime.fromtimestamp(int(candle[0]) / 1000, tz=timezone.utc)
-
-                if start_dt and candle_dt < start_dt:
-                    continue
-                if end_dt and candle_dt > end_dt:
-                    continue
-
-                filtered.append(candle)
-
-            candles = filtered
+        candles = fetch_binance_raw(
+            symbol=symbol,
+            interval=interval,
+            limit=limit
+        )
 
         if not candles or len(candles) < 50:
             return jsonify({
-                "error": "Not enough candle data found. Try more candles or a wider date range."
+                "error": "Not enough candle data found. Try increasing candles."
             }), 400
 
         signals = generate_backtest_signals(
@@ -1825,22 +1828,28 @@ def api_backtest():
             fee_percent=fee_percent,
             slippage_percent=slippage_percent
         )
-        save_backtest_run(
-            symbol=symbol,
-            interval=interval,
-            strategy=strategy,
-            start_date=start_date,
-            end_date=end_date,
-            summary=summary
-         )
+
+        try:
+            save_backtest_run(
+                symbol=symbol,
+                interval=interval,
+                strategy=strategy,
+                start_date=start_date,
+                end_date=end_date,
+                summary=summary
+            )
+        except Exception as save_error:
+            print("Backtest saved skipped/error:", save_error)
 
         return jsonify({
+            "ok": True,
             "summary": summary,
             "signals": signals,
             "trades": trades
         })
 
     except Exception as e:
+        print("BACKTEST ERROR:", str(e))
         return jsonify({"error": str(e)}), 500
 
 
