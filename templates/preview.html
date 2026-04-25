@@ -1214,7 +1214,7 @@
         if (refreshTimer) clearInterval(refreshTimer);
         setSocketStatus("Polling");
         doRefreshCycle();
-        refreshTimer = setInterval(doRefreshCycle, 30000);
+        refreshTimer = setInterval(doRefreshCycle, 60000);
       }
 
       function tryWebSocket() {
@@ -1994,11 +1994,13 @@
           document.getElementById("sbEngineStatus").textContent = "Error";
         });
 
+            setTimeout(() => {
         livebus.start();
-
+      }, 1000);
+      
       setTimeout(() => {
         charts.load().catch(console.error);
-      }, 1500);
+      }, 4000);
       });
     })();
   </script>
