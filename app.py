@@ -1768,24 +1768,6 @@ def api_chart_candles():
         return jsonify({"ok": False, "error": str(e), "data": []}), 500
 
 
-@app.route("/api/chart-overlays")
-def api_chart_overlays():
-    try:
-        symbol = request.args.get("symbol", "BTCUSDT").upper()
-        interval = request.args.get("interval", "1m")
-        limit = int(request.args.get("limit", 200))
-
-        data = get_chart_signals(symbol=symbol, interval=interval, limit=limit)
-
-        return jsonify({"ok": True, "data": data})
-    except Exception as e:
-        return jsonify({
-            "ok": False,
-            "error": str(e),
-            "data": {"markers": [], "trade_levels": [], "annotations": []}
-        }), 500
-
-
 @app.route("/api/backtest", methods=["POST"])
 def api_backtest():
     try:
@@ -1839,9 +1821,9 @@ def api_backtest():
                 summary=summary
             )
         except Exception as save_error:
-            print("Backtest saved skipped/error:", save_error)
+            print("Backtest save skipped/error:", save_error)
 
-               return jsonify({
+        return jsonify({
             "ok": True,
             "summary": summary,
             "signals": signals,
