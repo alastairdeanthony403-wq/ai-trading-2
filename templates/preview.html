@@ -1213,7 +1213,7 @@
         if (refreshTimer) clearInterval(refreshTimer);
         setSocketStatus("Polling");
         doRefreshCycle();
-        refreshTimer = setInterval(doRefreshCycle, 15000);
+        refreshTimer = setInterval(doRefreshCycle, 30000);
       }
 
       function tryWebSocket() {
