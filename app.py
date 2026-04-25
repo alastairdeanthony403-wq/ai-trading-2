@@ -14,6 +14,7 @@ import sqlite3
 import os
 from datetime import datetime, timedelta, timezone
 
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TEMPLATE_DIR = os.path.join(BASE_DIR, "templates")
 
