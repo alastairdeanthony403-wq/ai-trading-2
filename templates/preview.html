@@ -1878,58 +1878,69 @@
         btChart.timeScale().fitContent();
       }
 
-      async function run() {
-        const symbol = document.getElementById("btSymbol").value;
-        const interval = document.getElementById("btInterval").value;
-        const limit = Number(document.getElementById("btLimit").value);
-        const strategy = document.getElementById("btStrategy").value;
-        const startingBalance = Number(document.getElementById("btStartingBalance").value);
+     async function run() {
+  console.log("Run Backtest button clicked");
 
-        const btn = document.getElementById("runBacktestBtn");
-        const btnText = document.getElementById("runBtnText");
-        const loader = document.getElementById("runLoader");
+  const symbol = document.getElementById("btSymbol").value;
+  const interval = document.getElementById("btInterval").value;
+  const limit = Number(document.getElementById("btLimit").value);
+  const strategy = document.getElementById("btStrategy").value;
+  const startingBalance = Number(document.getElementById("btStartingBalance").value);
 
-        clearError();
+  const btn = document.getElementById("runBacktestBtn");
+  const btnText = document.getElementById("runBtnText");
+  const loader = document.getElementById("runLoader");
 
-        if (!startingBalance || startingBalance <= 0) {
-          showError("Please enter a valid starting balance.");
-          return;
-        }
+  clearError();
 
-        btn.disabled = true;
-        btnText.textContent = "Running...";
-        loader.classList.remove("hidden");
+  if (!startingBalance || startingBalance <= 0) {
+    showError("Please enter a valid starting balance.");
+    return;
+  }
 
-        resetOutputs();
+  btn.disabled = true;
+  btnText.textContent = "Running...";
+  loader.classList.remove("hidden");
 
-        try {
-          await loadChartData();
+  resetOutputs();
 
-          const data = await fetchJSON("/api/backtest", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              symbol,
-              interval,
-              limit,
-              strategy,
-              starting_balance: startingBalance
-            })
-          });
+  try {
+    // Do NOT let chart loading stop the backtest
+    try {
+      await loadChartData();
+    } catch (chartErr) {
+      console.warn("Chart load failed, but continuing backtest:", chartErr);
+    }
 
-          updateSummary(data.summary || {});
-          renderSignals(Array.isArray(data.signals) ? data.signals : []);
-          renderTrades(Array.isArray(data.trades) ? data.trades : []);
-          showSuccess(strategy === "bot" ? "True bot backtest completed." : "Backtest completed.");
-        } catch (err) {
-          showError(err.message || "Backtest failed.");
-        } finally {
-          btn.disabled = false;
-          btnText.textContent = "Run Backtest";
-          loader.classList.add("hidden");
-        }
-      }
+    const data = await fetchJSON("/api/backtest", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        symbol,
+        interval,
+        limit,
+        strategy,
+        starting_balance: startingBalance
+      })
+    });
 
+    console.log("Backtest response:", data);
+
+    updateSummary(data.summary || {});
+    renderSignals(Array.isArray(data.signals) ? data.signals : []);
+    renderTrades(Array.isArray(data.trades) ? data.trades : []);
+
+    showSuccess(strategy === "bot" ? "True bot backtest completed." : "Backtest completed.");
+
+  } catch (err) {
+    console.error("Backtest failed:", err);
+    showError(err.message || "Backtest failed. Check backend logs.");
+  } finally {
+    btn.disabled = false;
+    btnText.textContent = "Run Backtest";
+    loader.classList.add("hidden");
+  }
+}
       return { create, run, refreshTheme };
     });
 
