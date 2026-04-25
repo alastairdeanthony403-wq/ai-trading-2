@@ -1993,8 +1993,11 @@
           document.getElementById("sbEngineStatus").textContent = "Error";
         });
 
-        await charts.load().catch(console.error);
         livebus.start();
+
+      setTimeout(() => {
+        charts.load().catch(console.error);
+      }, 1500);
       });
     })();
   </script>
