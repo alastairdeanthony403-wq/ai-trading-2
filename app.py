@@ -1841,16 +1841,16 @@ def api_backtest():
         except Exception as save_error:
             print("Backtest saved skipped/error:", save_error)
 
-        return jsonify({
+               return jsonify({
             "ok": True,
             "summary": summary,
             "signals": signals,
             "trades": trades
         })
-import traceback
-print("BACKTEST ERROR:\n", traceback.format_exc())
+
     except Exception as e:
-        print("BACKTEST ERROR:", str(e))
+        import traceback
+        print("BACKTEST ERROR:\n", traceback.format_exc())
         return jsonify({"error": str(e)}), 500
 
 
