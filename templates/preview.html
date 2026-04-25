@@ -2047,6 +2047,37 @@
         alert("Backtest failed");
     }
 }
+   function renderBacktestResults(data) {
+    const summary = data.summary;
+    const trades = data.trades;
+
+    // SUMMARY
+    document.getElementById("bt-summary").innerHTML = `
+        <div>Net PnL: ${summary.net_pnl}</div>
+        <div>Win Rate: ${summary.win_rate}%</div>
+        <div>Profit Factor: ${summary.profit_factor}</div>
+        <div>Max Drawdown: ${summary.max_drawdown}</div>
+        <div>Total Trades: ${summary.total_trades}</div>
+    `;
+
+    // TABLE
+    const table = document.getElementById("bt-trades");
+    table.innerHTML = "";
+
+    trades.slice(0, 100).forEach(t => {
+        const row = `
+            <tr>
+                <td>${t.symbol}</td>
+                <td>${t.side}</td>
+                <td>${t.entry_price}</td>
+                <td>${t.exit_price}</td>
+                <td>${t.pnl}</td>
+                <td>${t.session}</td>
+            </tr>
+        `;
+        table.innerHTML += row;
+    });
+}
   </script>
 </body>
 </html>
