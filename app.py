@@ -1847,7 +1847,8 @@ def api_backtest():
             "signals": signals,
             "trades": trades
         })
-
+import traceback
+print("BACKTEST ERROR:\n", traceback.format_exc())
     except Exception as e:
         print("BACKTEST ERROR:", str(e))
         return jsonify({"error": str(e)}), 500
