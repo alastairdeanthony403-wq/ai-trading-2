@@ -2003,6 +2003,50 @@
       }, 4000);
       });
     })();
+   async function runBacktest() {
+    const symbol = document.getElementById("bt-symbol").value;
+    const interval = document.getElementById("bt-interval").value;
+    const limit = parseInt(document.getElementById("bt-limit").value || 200);
+    const strategy = document.getElementById("bt-strategy").value;
+
+    const start_date = document.getElementById("bt-start").value;
+    const end_date = document.getElementById("bt-end").value;
+
+    const payload = {
+        symbol,
+        interval,
+        limit,
+        strategy,
+        starting_balance: 1000,
+        fee_percent: 0.04,
+        slippage_percent: 0.02,
+        start_date,
+        end_date
+    };
+
+    try {
+        const res = await fetch("/api/backtest", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(payload)
+        });
+
+        const data = await res.json();
+
+        if (data.error) {
+            alert(data.error);
+            return;
+        }
+
+        renderBacktestResults(data);
+
+    } catch (err) {
+        console.error(err);
+        alert("Backtest failed");
+    }
+}
   </script>
 </body>
 </html>
