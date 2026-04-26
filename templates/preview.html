@@ -1065,11 +1065,22 @@
       }
 
       async function fetchJSON(url, options) {
+        const controller = new AbortController();
+        const timeoutMs = options?.timeoutMs || 15000;
+        const fetchOptions = { ...(options || {}), signal: controller.signal };
+        delete fetchOptions.timeoutMs;
+
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
         let res;
         try {
-          res = await fetch(url, options);
+          res = await fetch(url, fetchOptions);
         } catch (err) {
+          if (err?.name === "AbortError") {
+            throw new Error("Request timed out. The server took too long to respond.");
+          }
           throw new Error(err?.message || "Network request failed.");
+        } finally {
+          clearTimeout(timeoutId);
         }
 
         const text = await res.text();
@@ -1160,6 +1171,8 @@
       let socket = null;
       let refreshTimer = null;
       let started = false;
+      let refreshPromise = null;
+      let latestSignalPayload = null;
 
       function emit(event, payload) {
         (listeners[event] || []).forEach(fn => {
@@ -1187,46 +1200,117 @@
         if (el) el.textContent = text || "--";
       }
 
-      async function doRefreshCycle() {
+      function signalPayloadToMap(signalPayload) {
+        const map = {};
+        (signalPayload?.all_signals || []).forEach(signal => {
+          map[signal.symbol] = signal;
+        });
+        return map;
+      }
+
+      async function loadDashboardData(useEngineRefresh = false) {
+        const [signalResult, alertsResult, statsResult] = await Promise.allSettled([
+          fetchJSON(useEngineRefresh ? "/refresh-engine" : "/signal"),
+          fetchJSON("/alerts"),
+          fetchJSON("/stats")
+        ]);
+
+        let hadSuccess = false;
+
+        if (signalResult.status === "fulfilled") {
+          hadSuccess = true;
+          latestSignalPayload = signalResult.value;
+          emit("dashboard:data", signalResult.value);
+          emit("signal_map:data", signalPayloadToMap(signalResult.value));
+          if (signalResult.value.last_update) setLastUpdate(signalResult.value.last_update);
+        } else {
+          console.error("Dashboard data failed:", signalResult.reason);
+        }
+
+        if (alertsResult.status === "fulfilled") {
+          hadSuccess = true;
+          emit("alerts:data", alertsResult.value);
+        } else {
+          console.error("Alerts fetch failed:", alertsResult.reason);
+        }
+
+        if (statsResult.status === "fulfilled") {
+          hadSuccess = true;
+          emit("stats:data", statsResult.value);
+        } else {
+          console.error("Stats fetch failed:", statsResult.reason);
+        }
+
+        if (!hadSuccess) {
+          throw new Error("Unable to load dashboard data right now.");
+        }
+      }
+
+      async function loadAnalyticsData() {
+        const [historyResult, equityResult] = await Promise.allSettled([
+          fetchJSON("/history"),
+          fetchJSON("/equity")
+        ]);
+
+        if (historyResult.status === "fulfilled") {
+          emit("history:data", historyResult.value);
+        } else {
+          console.error("History fetch failed:", historyResult.reason);
+        }
+
+        if (equityResult.status === "fulfilled") {
+          emit("equity:data", equityResult.value);
+        } else {
+          console.error("Equity fetch failed:", equityResult.reason);
+        }
+      }
+
+      async function loadRealtimeData() {
+        if (!latestSignalPayload) {
+          try {
+            latestSignalPayload = await fetchJSON("/signal");
+          } catch (err) {
+            console.error("Realtime signal refresh failed:", err);
+          }
+        }
+
+        if (latestSignalPayload) {
+          emit("signal_map:data", signalPayloadToMap(latestSignalPayload));
+        }
+
         try {
-          const refresh = await fetchJSON("/refresh-engine");
-          emit("engine:refresh", refresh);
-
-          const signal = await fetchJSON("/signal");
-          emit("dashboard:data", signal);
-          if (signal.last_update) setLastUpdate(signal.last_update);
-
-          const alerts = await fetchJSON("/alerts");
-          emit("alerts:data", alerts);
-
-          const stats = await fetchJSON("/stats");
-          emit("stats:data", stats);
-
-          const history = await fetchJSON("/history");
-          emit("history:data", history);
-
-          const equity = await fetchJSON("/equity");
-          emit("equity:data", equity);
-
           const liveTrades = await fetchJSON("/live_trades");
           emit("live_trades:data", liveTrades);
-
-          const signalMap = await fetchJSON("/signals");
-          emit("signal_map:data", signalMap);
-
-          setEngineStatus("Online");
         } catch (err) {
-          console.error("Refresh cycle failed:", err);
-          setEngineStatus("Degraded");
-          emit("engine:error", err);
+          console.error("Live trades fetch failed:", err);
         }
+      }
+
+      async function doRefreshCycle(useEngineRefresh = false) {
+        if (refreshPromise) return refreshPromise;
+
+        refreshPromise = (async () => {
+          try {
+            setEngineStatus(useEngineRefresh ? "Refreshing" : "Loading");
+            await loadDashboardData(useEngineRefresh);
+            setEngineStatus("Online");
+          } catch (err) {
+            console.error("Refresh cycle failed:", err);
+            setEngineStatus("Degraded");
+            emit("engine:error", err);
+          } finally {
+            refreshPromise = null;
+          }
+        })();
+
+        return refreshPromise;
       }
 
       function startPolling() {
         if (refreshTimer) clearInterval(refreshTimer);
         setSocketStatus("Polling");
-        doRefreshCycle();
-        refreshTimer = setInterval(doRefreshCycle, 60000);
+        doRefreshCycle(false);
+        refreshTimer = setInterval(() => doRefreshCycle(true), 60000);
       }
 
       function tryWebSocket() {
@@ -1284,7 +1368,9 @@
       return {
         on,
         start,
-        refreshNow: doRefreshCycle
+        refreshNow: () => doRefreshCycle(true),
+        loadAnalytics: loadAnalyticsData,
+        loadRealtime: loadRealtimeData
       };
     });
 
@@ -1302,6 +1388,14 @@
         });
 
         history.replaceState(null, "", page === "dashboard" ? "/" : `/${page}`);
+
+        if (page === "charts") {
+          AppModules.require("charts").load().catch(console.error);
+        } else if (page === "analytics") {
+          AppModules.require("livebus").loadAnalytics().catch(console.error);
+        } else if (page === "realtime") {
+          AppModules.require("livebus").loadRealtime().catch(console.error);
+        }
       }
 
       function init() {
@@ -1403,6 +1497,7 @@
       let mainChart = null;
       let mainCandleSeries = null;
       let mainLineSeries = [];
+      let hasLoaded = false;
 
       function create() {
         const container = document.getElementById("mainChart");
@@ -1534,9 +1629,14 @@
         }
 
         mainChart.timeScale().fitContent();
+        hasLoaded = true;
       }
 
-      return { create, load, refreshTheme };
+      function ensureLoaded() {
+        return hasLoaded ? Promise.resolve() : load();
+      }
+
+      return { create, load, ensureLoaded, refreshTheme };
     });
 
     // ---------------- ANALYTICS ----------------
@@ -2017,13 +2117,9 @@
           document.getElementById("sbEngineStatus").textContent = "Error";
         });
 
-            setTimeout(() => {
-        livebus.start();
-      }, 1000);
-      
-      setTimeout(() => {
-        charts.load().catch(console.error);
-      }, 4000);
+        setTimeout(() => {
+          livebus.start();
+        }, 150);
       });
     })();
   </script>
