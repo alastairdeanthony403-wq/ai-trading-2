@@ -1065,13 +1065,25 @@
       }
 
       async function fetchJSON(url, options) {
-        const res = await fetch(url, options);
+        let res;
+        try {
+          res = await fetch(url, options);
+        } catch (err) {
+          throw new Error(err?.message || "Network request failed.");
+        }
+
         const text = await res.text();
         let data = {};
         try { data = text ? JSON.parse(text) : {}; } catch (_) {}
+
         if (!res.ok) {
-          throw new Error(data.error || `Request failed (${res.status})`);
+          const backendError =
+            data?.error ||
+            data?.message ||
+            (text && !text.trim().startsWith("<") ? text.trim() : "");
+          throw new Error(backendError || `Request failed (${res.status})`);
         }
+
         return data;
       }
 
@@ -2014,114 +2026,6 @@
       }, 4000);
       });
     })();
-   async function runBacktest() {
-    const symbol = document.getElementById("bt-symbol").value;
-    const interval = document.getElementById("bt-interval").value;
-    const limit = parseInt(document.getElementById("bt-limit").value || 200);
-    const strategy = document.getElementById("bt-strategy").value;
-
-    const start_date = document.getElementById("bt-start").value;
-    const end_date = document.getElementById("bt-end").value;
-
-    const payload = {
-        symbol,
-        interval,
-        limit,
-        strategy,
-        starting_balance: 1000,
-        fee_percent: 0.04,
-        slippage_percent: 0.02,
-        start_date,
-        end_date
-    };
-
-    try {
-        const res = await fetch("https://ai-trading-2-2.onrender.com/api/backtest", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify(payload)
-        });
-
-        const data = await res.json();
-
-        if (data.error) {
-            alert(data.error);
-            return;
-        }
-
-        renderBacktestResults(data);
-
-    } catch (err) {
-        console.error(err);
-        alert("Backtest failed");
-    }
-}
-   function renderBacktestResults(data) {
-    const summary = data.summary;
-    const trades = data.trades;
-
-    // SUMMARY
-    document.getElementById("bt-summary").innerHTML = `
-        <div>Net PnL: ${summary.net_pnl}</div>
-        <div>Win Rate: ${summary.win_rate}%</div>
-        <div>Profit Factor: ${summary.profit_factor}</div>
-        <div>Max Drawdown: ${summary.max_drawdown}</div>
-        <div>Total Trades: ${summary.total_trades}</div>
-    `;
-
-    // TABLE
-    const table = document.getElementById("bt-trades");
-    table.innerHTML = "";
-
-    trades.slice(0, 100).forEach(t => {
-        const row = `
-            <tr>
-                <td>${t.symbol}</td>
-                <td>${t.side}</td>
-                <td>${t.entry_price}</td>
-                <td>${t.exit_price}</td>
-                <td>${t.pnl}</td>
-                <td>${t.session}</td>
-            </tr>
-        `;
-        table.innerHTML += row;
-    });
-}
-
+  </script>
 </body>
 </html>
-document.getElementById("runBacktestBtn").addEventListener("click", async () => {
-    const payload = {
-        symbol: document.getElementById("btSymbol").value,
-        interval: document.getElementById("btInterval").value,
-        limit: parseInt(document.getElementById("btLimit").value),
-        strategy: document.getElementById("btStrategy").value,
-        starting_balance: parseFloat(document.getElementById("btStartingBalance").value)
-    };
-
-    try {const res = await fetch("/api/backtest", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify(payload)
-        });
-
-        const data = await res.json();
-
-        console.log("Backtest result:", data);
-
-        if (!res.ok) {
-            alert("Error: " + data.error);
-            return;
-        }
-
-        alert("Backtest completed successfully!");
-    } catch (err) {
-        console.error(err);
-        alert("Request failed");
-    }
-});
-     </script>
