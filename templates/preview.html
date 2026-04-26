@@ -2101,8 +2101,7 @@ document.getElementById("runBacktestBtn").addEventListener("click", async () => 
         starting_balance: parseFloat(document.getElementById("btStartingBalance").value)
     };
 
-    try {
-        const res = await fetch("https://ai-trading-2-2.onrender.com/api/backtest", {
+    try {const res = await fetch("/api/backtest", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json"
