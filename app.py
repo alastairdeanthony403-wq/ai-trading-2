@@ -12,6 +12,7 @@ import requests
 import uuid
 import sqlite3
 import os
+import time
 from datetime import datetime, timedelta, timezone
 
 
@@ -50,6 +51,11 @@ bot_config = {
 }
 
 DB_NAME = "trades.db"
+MARKET_DATA_TTL_SECONDS = 20
+SUMMARY_TTL_SECONDS = 15
+
+_raw_candle_cache = {}
+_summary_cache = {}
 
 BINANCE_BASE_URLS = [
     "https://api.binance.com",
@@ -165,6 +171,26 @@ def now_str():
 
 def _request_json(url, params=None, timeout=10):
     return requests.get(url, params=params, timeout=timeout)
+
+
+def _cache_get(cache, key, ttl_seconds):
+    entry = cache.get(key)
+    if not entry:
+        return None
+
+    if time.time() - entry["timestamp"] > ttl_seconds:
+        cache.pop(key, None)
+        return None
+
+    return entry["value"]
+
+
+def _cache_set(cache, key, value):
+    cache[key] = {
+        "timestamp": time.time(),
+        "value": value
+    }
+    return value
 
 
 def add_alert(message):
@@ -541,15 +567,28 @@ def fetch_binance_raw(symbol="BTCUSDT", interval="5m", limit=500):
     if not symbol or not symbol.endswith("USDT"):
         raise ValueError("Invalid symbol")
 
+    cache_key = (symbol, interval, int(limit))
+    cached = _cache_get(_raw_candle_cache, cache_key, MARKET_DATA_TTL_SECONDS)
+    if cached is not None:
+        return cached
+
     binance_error = None
 
     try:
-        return _fetch_binance_klines(symbol, interval=interval, limit=limit)
+        return _cache_set(
+            _raw_candle_cache,
+            cache_key,
+            _fetch_binance_klines(symbol, interval=interval, limit=limit)
+        )
     except Exception as e:
         binance_error = str(e)
 
     try:
-        return _fetch_coinbase_raw(symbol=symbol, interval=interval, limit=limit)
+        return _cache_set(
+            _raw_candle_cache,
+            cache_key,
+            _fetch_coinbase_raw(symbol=symbol, interval=interval, limit=limit)
+        )
     except Exception as fallback_error:
         raise RuntimeError(
             f"Primary source failed ({binance_error}) | Fallback source failed ({fallback_error})"
@@ -815,7 +854,7 @@ def session_allowed():
     return hour not in bot_config["blocked_crypto_hours_utc"]
 
 
-def evaluate_bot_window(df, strategy="bot", symbol="BTCUSDT", interval="5m"):
+def evaluate_bot_window(df, strategy="bot", symbol="BTCUSDT", interval="5m", higher_df=None):
     if df is None or len(df) < 50:
         return {
             "signal": "HOLD",
@@ -837,7 +876,8 @@ def evaluate_bot_window(df, strategy="bot", symbol="BTCUSDT", interval="5m"):
     confidence = estimate_confidence(df, raw_signal)
 
     higher_tf = get_higher_timeframe(interval)
-    higher_df = fetch_binance(symbol, interval=higher_tf, limit=100)
+    if higher_df is None:
+        higher_df = fetch_binance(symbol, interval=higher_tf, limit=100)
     higher_tf_bias = get_trend_bias(higher_df)
 
     liquidity_sweep = detect_liquidity_sweep(df)
@@ -947,22 +987,31 @@ def calculate_trade_levels(df, signal):
 
 
 def get_symbol_summary(symbol, strategy="bot", interval="1m"):
+    cache_key = (symbol, strategy, interval)
+    cached = _cache_get(_summary_cache, cache_key, SUMMARY_TTL_SECONDS)
+    if cached is not None:
+        return cached
+
     df = fetch_binance(symbol, interval=interval, limit=200)
     if df is None:
         return None
+
+    higher_tf = get_higher_timeframe(interval)
+    higher_df = fetch_binance(symbol, interval=higher_tf, limit=100)
 
     evaluation = evaluate_bot_window(
         df,
         strategy=strategy,
         symbol=symbol,
-        interval=interval
+        interval=interval,
+        higher_df=higher_df
     )
 
     prev_close = float(df.iloc[-2]["close"]) if len(df) > 1 else float(df.iloc[-1]["close"])
     last_close = float(df.iloc[-1]["close"])
     change_pct = ((last_close - prev_close) / prev_close * 100) if prev_close else 0
 
-    return {
+    return _cache_set(_summary_cache, cache_key, {
         "symbol": symbol,
         "price": round(last_close, 2),
         "live_price": round(last_close, 2),
@@ -978,7 +1027,7 @@ def get_symbol_summary(symbol, strategy="bot", interval="1m"):
         "liquidity_sweep": evaluation["liquidity_sweep"],
         "bos": evaluation["bos"],
         "smc_score": evaluation["smc_score"]
-    }
+    })
 
 
 def get_engine_snapshot():
@@ -1248,14 +1297,19 @@ def get_chart_signals(symbol="BTCUSDT", interval="1m", limit=200):
     highs = df["high"].tolist()
     lows = df["low"].tolist()
 
+    higher_tf = get_higher_timeframe(interval)
+    higher_df_full = resample_candles_for_interval(df, higher_tf)
+
     for i in range(50, len(df)):
         window_df = df.iloc[:i + 1].copy().reset_index(drop=True)
+        higher_window_df = get_higher_timeframe_window(higher_df_full, window_df.iloc[-1]["time"])
 
         evaluation = evaluate_bot_window(
             window_df,
             strategy="bot",
             symbol=symbol,
-            interval=interval
+            interval=interval,
+            higher_df=higher_window_df
         )
 
         signal = evaluation["signal"]
@@ -1315,14 +1369,19 @@ def generate_backtest_signals(candles, symbol="BTCUSDT", interval="5m", strategy
     if df is None or len(df) < 50:
         return signals
 
+    higher_tf = get_higher_timeframe(interval)
+    higher_df_full = resample_candles_for_interval(df, higher_tf)
+
     for i in range(50, len(df)):
         window_df = df.iloc[:i + 1].copy().reset_index(drop=True)
+        higher_window_df = get_higher_timeframe_window(higher_df_full, window_df.iloc[-1]["time"])
 
         evaluation = evaluate_bot_window(
             window_df,
             strategy=strategy,
             symbol=symbol,
-            interval=interval
+            interval=interval,
+            higher_df=higher_window_df
         )
 
         signal_type = evaluation["signal"]
@@ -1356,6 +1415,57 @@ def generate_backtest_signals(candles, symbol="BTCUSDT", interval="5m", strategy
         })
 
     return signals
+
+
+def interval_to_pandas_rule(interval):
+    mapping = {
+        "1m": "1min",
+        "5m": "5min",
+        "15m": "15min",
+        "1h": "1h",
+        "4h": "4h"
+    }
+    return mapping.get(interval)
+
+
+def resample_candles_for_interval(df, target_interval):
+    if df is None or df.empty:
+        return None
+
+    rule = interval_to_pandas_rule(target_interval)
+    if not rule:
+        return None
+
+    indexed = df.copy()
+    indexed["time"] = pd.to_datetime(indexed["time"], errors="coerce")
+    indexed.dropna(subset=["time"], inplace=True)
+    if indexed.empty:
+        return None
+
+    indexed = indexed.set_index("time")
+    resampled = indexed.resample(rule).agg({
+        "open": "first",
+        "high": "max",
+        "low": "min",
+        "close": "last",
+        "volume": "sum"
+    }).dropna()
+
+    if resampled.empty:
+        return None
+
+    return resampled.reset_index()
+
+
+def get_higher_timeframe_window(higher_df, current_time):
+    if higher_df is None or higher_df.empty:
+        return None
+
+    filtered = higher_df[higher_df["time"] <= current_time]
+    if filtered.empty:
+        return None
+
+    return filtered.reset_index(drop=True)
 
 
 def get_session_name(dt):
@@ -1768,6 +1878,24 @@ def api_chart_candles():
         return jsonify({"ok": False, "error": str(e), "data": []}), 500
 
 
+@app.route("/api/chart-overlays")
+def api_chart_overlays():
+    try:
+        symbol = request.args.get("symbol", "BTCUSDT").upper()
+        interval = request.args.get("interval", "1m")
+        limit = int(request.args.get("limit", 200))
+
+        overlays = get_chart_signals(symbol=symbol, interval=interval, limit=limit)
+
+        return jsonify({
+            "ok": True,
+            "data": overlays,
+            "error": None
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e), "data": {"markers": [], "trade_levels": [], "annotations": []}}), 500
+
+
 @app.route("/api/backtest", methods=["POST"])
 def api_backtest():
     try:
@@ -1868,6 +1996,11 @@ def backtester():
 @app.route("/api/real-trading-readiness")
 def api_real_trading_readiness():
     return jsonify(get_real_trading_readiness())
+
+
+@app.route("/health")
+def health():
+    return jsonify({"ok": True, "time": now_str()})
 
 
 # ---------------- RUN ----------------
