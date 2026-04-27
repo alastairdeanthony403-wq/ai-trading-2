@@ -1384,10 +1384,15 @@ def generate_backtest_signals(candles, symbol="BTCUSDT", interval="5m", strategy
             higher_df=higher_window_df
         )
 
-        signal_type = evaluation["signal"]
+    signal_type = evaluation.get("signal")
 
-        if signal_type not in ["BUY", "SELL"]:
-            continue
+# TEMP DEBUG: force signals if none are generated
+if signal_type not in ["BUY", "SELL"]:
+    # try forcing simple signal so we can test pipeline
+    if i % 20 == 0:
+        signal_type = "BUY"
+    else:
+        continue
 
         levels = calculate_trade_levels(window_df, signal_type)
         signal_time = window_df.iloc[-1]["time"].strftime("%Y-%m-%d %H:%M:%S")
